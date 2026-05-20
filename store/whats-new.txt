@@ -1,0 +1,7 @@
+HashCloud 1.0 — Initial release.
+- Polished neon dark dashboard
+- Live hashpower & earnings ticker
+- 10 cloud power packages with BOGO welcome miner
+- Withdrawals via Lightning, on-chain BTC, and Cash App
+- 7-day daily check-in streak with up to 7x bonus
+- Referral program: earn for every friend you bring in

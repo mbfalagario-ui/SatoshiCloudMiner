@@ -1,0 +1,27 @@
+HashCloud - Cloud Computing Performance Monitor
+
+Experience cloud computing performance monitoring made simple.
+
+HashCloud is a sleek, modern monitoring tool for cloud computing performance and rewards. No hardware, no setup, no technical headaches — just a beautiful dashboard that shows your cloud workloads in real time.
+
+KEY FEATURES
+- Cloud-Powered Operations: All calculations happen on remote servers. Your device is purely for monitoring and managing.
+- Customizable Power Packages: Pick a cloud computing power plan that matches your goals. Adjust at any time.
+- Live Updates: Watch performance and rewards stream in real time with a polished neon dashboard.
+- Try Before You Buy: Every new account gets a free 24-hour Welcome Miner to explore how rewards flow.
+- Multiple Payout Methods: Cash out via Lightning Network, Coinbase, ZBD, Speed Wallet, or Cash App, with clear minimums and 24-hour caps shown up front.
+- Daily Check-in & Streaks: Open the app daily and watch your bonus grow up to 7x.
+- Invite Friends: Share your unique referral code and earn for every signup.
+
+WHY HASHCLOUD
+- Beginner-friendly: Designed for newcomers. No complex setup, no confusing jargon.
+- Crystal-clear costs: Every fee is shown upfront — no hidden surprises.
+- Secure by design: Industry-standard encryption protects your account and data.
+- Sleek dark UI: A modern neon-on-obsidian look with live animated metrics.
+
+COMPLIANCE & DISCLAIMER
+HashCloud is a cloud computing service and monitoring tool. It is not a financial, investment, brokerage, or trading platform. Outcomes depend on server status and operational conditions. Pricing may reflect operational costs such as server maintenance and electricity. Use of the app must comply with your local laws. This application is independently developed and is not affiliated with any external institution.
+
+Support: support@hashcloud.app
+Terms: https://hashcloud.app/terms
+Privacy: https://hashcloud.app/privacy

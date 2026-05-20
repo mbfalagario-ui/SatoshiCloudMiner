@@ -16,6 +16,9 @@ import string
 import bcrypt
 import jwt as pyjwt
 
+from integrations.apple import verify_apple_transaction
+from integrations.btcpay import create_payout as btcpay_create_payout, get_payout as btcpay_get_payout
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -191,6 +194,7 @@ class WithdrawRequest(BaseModel):
 
 class BuyPackageRequest(BaseModel):
     package_id: str
+    apple_transaction_id: Optional[str] = None  # iOS App Store transaction id from StoreKit
 
 
 class CheckinResponse(BaseModel):
@@ -520,8 +524,35 @@ async def buy_package(
     await accrue_earnings(current_user["id"])
     now = now_utc()
 
-    # NOTE: Real IAP receipt validation should be plugged in here for App Store.
-    # For now we simulate a successful purchase.
+    # ------------------------------------------------------------------
+    # Apple IAP receipt validation
+    # If the client supplied an `apple_transaction_id` (it will when the
+    # purchase originated from StoreKit on iOS), we validate it against the
+    # App Store Server API and refuse the request if it doesn't match this
+    # package's product id. When Apple credentials aren't configured the
+    # verifier returns a MOCK response so the endpoint still works in dev.
+    # Each transactionId can only be redeemed ONCE.
+    # ------------------------------------------------------------------
+    apple_info: Dict[str, Any] = {"_mocked": True, "skipped": True}
+    if payload.apple_transaction_id:
+        # Idempotency: refuse a transactionId that's already been redeemed.
+        existing = await db.transactions.find_one(
+            {"apple_transaction_id": payload.apple_transaction_id}
+        )
+        if existing:
+            raise HTTPException(
+                status_code=400, detail="This Apple transaction was already redeemed."
+            )
+        try:
+            apple_info = verify_apple_transaction(
+                payload.apple_transaction_id,
+                expected_product_id=pkg["id"],
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Apple IAP validation failed: {e}")
+        except Exception as e:
+            logger.exception("Apple IAP verification crashed")
+            raise HTTPException(status_code=500, detail=f"Apple IAP verification error: {e}")
 
     def _make_machine(suffix: str = "") -> Dict[str, Any]:
         return {
@@ -552,6 +583,9 @@ async def buy_package(
             "amount_btc": 0.0,
             "status": "completed",
             "description": f"Purchased {pkg['name']}" + (" (BOGO)" if pkg.get("bogo") else ""),
+            "apple_transaction_id": payload.apple_transaction_id,
+            "apple_environment": apple_info.get("environment"),
+            "apple_mocked": bool(apple_info.get("_mocked")),
             "created_at": now.isoformat(),
         }
     )
@@ -560,6 +594,10 @@ async def buy_package(
         "success": True,
         "machines_added": len(machines_added),
         "package": pkg,
+        "apple": {
+            "verified": not apple_info.get("_mocked", True),
+            "environment": apple_info.get("environment"),
+        },
     }
 
 
@@ -614,9 +652,29 @@ async def withdraw(
         )
 
     amount_btc = usd_to_btc(payload.amount_usd)
+    # Reserve the balance first
     await db.users.update_one(
         {"id": current_user["id"]}, {"$inc": {"balance_btc": -amount_btc}}
     )
+
+    # ------------------------------------------------------------------
+    # BTCPay Server payout (real Lightning / on-chain BTC).
+    # Falls back to a mock `pending` payout if BTCPay isn't configured.
+    # If the live call fails, we refund the user's balance immediately.
+    # ------------------------------------------------------------------
+    try:
+        payout = btcpay_create_payout(
+            amount_usd=payload.amount_usd,
+            destination=payload.address,
+            description=f"HashCloud withdrawal via {method['name']}",
+        )
+    except Exception as e:
+        # Refund the reserved balance and bubble up an error
+        await db.users.update_one(
+            {"id": current_user["id"]}, {"$inc": {"balance_btc": amount_btc}}
+        )
+        logger.exception("BTCPay payout failed")
+        raise HTTPException(status_code=502, detail=f"Payout provider error: {e}")
 
     tx = {
         "id": str(uuid.uuid4()),
@@ -624,18 +682,48 @@ async def withdraw(
         "type": "withdrawal",
         "amount_usd": payload.amount_usd,
         "amount_btc": amount_btc,
-        "status": "pending",
+        "status": payout.get("status", "pending"),
         "method": method["name"],
         "address": payload.address,
         "description": f"Withdrawal via {method['name']}",
+        "btcpay_provider": payout.get("provider"),
+        "btcpay_payout_id": payout.get("payout_id"),
+        "btcpay_pull_payment_id": payout.get("pull_payment_id"),
+        "btcpay_state": payout.get("btcpay_state"),
+        "btcpay_view_url": payout.get("view_url"),
+        "payment_method": payout.get("payment_method"),
         "created_at": now_utc().isoformat(),
     }
     await db.transactions.insert_one({**tx})
     tx.pop("_id", None)
-    return {"success": True, "transaction": tx}
+    return {"success": True, "transaction": tx, "payout": payout}
 
 
 # ---------------------------- Routes: Transactions ----------------------------
+@api.get("/withdraw/{tx_id}/status")
+async def withdraw_status(tx_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    tx = await db.transactions.find_one(
+        {"id": tx_id, "user_id": current_user["id"], "type": "withdrawal"}, {"_id": 0}
+    )
+    if not tx:
+        raise HTTPException(status_code=404, detail="Withdrawal not found")
+    payout_id = tx.get("btcpay_payout_id")
+    if not payout_id:
+        return {"transaction": tx, "live_status": None}
+    try:
+        live = btcpay_get_payout(payout_id)
+    except Exception as e:
+        return {"transaction": tx, "live_status": None, "error": str(e)}
+    # Update stored status if it changed
+    if live.get("status") and live["status"] != tx.get("status"):
+        await db.transactions.update_one(
+            {"id": tx_id},
+            {"$set": {"status": live["status"], "btcpay_state": live.get("btcpay_state")}},
+        )
+        tx["status"] = live["status"]
+    return {"transaction": tx, "live_status": live}
+
+
 @api.get("/transactions")
 async def transactions(
     current_user: Dict[str, Any] = Depends(get_current_user),
