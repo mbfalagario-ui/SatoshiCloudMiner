@@ -1,0 +1,184 @@
+{
+  "theme": "dark",
+  "archetype": "Electric & Neon (7)",
+  "brand_name": "HashCloud",
+  "colors": {
+    "background": {
+      "default": "#0B0E14",
+      "surface": "#151A22",
+      "surfaceElevated": "#1F2633",
+      "border": "#2A3143"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A0A5B5",
+      "tertiary": "#686D7B",
+      "disabled": "#454955"
+    },
+    "brand": {
+      "primary": "#00FFA3",
+      "primaryGlow": "rgba(0,255,163,0.3)",
+      "secondary": "#00D1FF",
+      "secondaryGlow": "rgba(0,209,255,0.3)",
+      "danger": "#FF3366",
+      "warning": "#FFB800"
+    }
+  },
+  "typography": {
+    "families": {
+      "heading": "Outfit, sans-serif",
+      "body": "Manrope, sans-serif",
+      "monospace": "JetBrains Mono, monospace"
+    },
+    "scales": {
+      "h1": {
+        "fontSize": "36px",
+        "fontWeight": "700",
+        "lineHeight": "1.2",
+        "letterSpacing": "-1px"
+      },
+      "h2": {
+        "fontSize": "28px",
+        "fontWeight": "600",
+        "lineHeight": "1.3",
+        "letterSpacing": "-0.5px"
+      },
+      "h3": {
+        "fontSize": "22px",
+        "fontWeight": "600",
+        "lineHeight": "1.4",
+        "letterSpacing": "0px"
+      },
+      "body": {
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "lineHeight": "1.5",
+        "letterSpacing": "0px"
+      },
+      "small": {
+        "fontSize": "14px",
+        "fontWeight": "500",
+        "lineHeight": "1.5",
+        "letterSpacing": "0px"
+      },
+      "balance": {
+        "fontSize": "48px",
+        "fontWeight": "700",
+        "lineHeight": "1.1",
+        "fontFamily": "JetBrains Mono, monospace",
+        "letterSpacing": "-2px"
+      }
+    }
+  },
+  "spacing": {
+    "px": "1px",
+    "xs": "4px",
+    "sm": "8px",
+    "md": "16px",
+    "lg": "24px",
+    "xl": "32px",
+    "2xl": "48px",
+    "containerPadding": "24px"
+  },
+  "border": {
+    "radius": {
+      "sm": "8px",
+      "md": "16px",
+      "lg": "24px",
+      "full": "9999px"
+    },
+    "width": {
+      "default": "1px",
+      "thick": "2px"
+    }
+  },
+  "shadows_and_glows": {
+    "glowPrimary": "0 0 20px rgba(0, 255, 163, 0.4)",
+    "glowSecondary": "0 0 20px rgba(0, 209, 255, 0.4)",
+    "cardShadow": "0 8px 32px rgba(0, 0, 0, 0.4)"
+  },
+  "components": {
+    "BottomTabNav": {
+      "background": "rgba(11, 14, 20, 0.8)",
+      "backdropFilter": "blur(16px)",
+      "borderTop": "1px solid #2A3143",
+      "activeColor": "#00FFA3",
+      "inactiveColor": "#686D7B"
+    },
+    "MiningCard": {
+      "background": "#151A22",
+      "borderRadius": "24px",
+      "border": "1px solid rgba(255,255,255,0.05)",
+      "animation": "pulse-glow 2s infinite"
+    },
+    "ButtonPrimary": {
+      "background": "#00FFA3",
+      "color": "#0B0E14",
+      "borderRadius": "16px",
+      "fontWeight": "700"
+    },
+    "Badge": {
+      "background": "rgba(0, 255, 163, 0.1)",
+      "color": "#00FFA3",
+      "borderRadius": "9999px",
+      "padding": "4px 12px"
+    }
+  },
+  "screens": {
+    "HomeDashboard": {
+      "layout": "Vertical stack with generous spacing (24px gap)",
+      "key_elements": [
+        "Total Balance (Monospace, Huge)",
+        "Live Hash Rate counter (Neon Green, Pulsing)",
+        "Active Mining Machine Card with 3D hardware asset",
+        "Recent Activity List"
+      ]
+    },
+    "Shop": {
+      "layout": "Bento Grid or Vertical List of Cards",
+      "key_elements": [
+        "Package Cards with glowing borders for Premium tiers",
+        "Clear pricing, daily yield, and 'Buy Now' primary buttons"
+      ]
+    },
+    "Wallet": {
+      "layout": "Form layout, grouped inputs",
+      "key_elements": [
+        "Withdrawal Method Selection (Icon + Text row)",
+        "Input field for wallet address with 'Paste' quick action",
+        "Available Balance display"
+      ]
+    }
+  },
+  "media": {
+    "app_icon": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/9b98805d-6f48-4c52-a95c-37410ab52781/images/1ebdaf66e28908ee4864bb3c2cd10c4ffd15605893cece517d1d05873c009bc8.png",
+      "description": "App Icon Concept - HashCloud"
+    },
+    "mining_hardware": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/9b98805d-6f48-4c52-a95c-37410ab52781/images/f4bf258b4d106da8fcdf0aa30bfc55bf18c396cf860b3bb32f08de3362d67572.png",
+      "description": "3D Mining Hardware graphic for Active Miner Card"
+    },
+    "crypto_coin": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/9b98805d-6f48-4c52-a95c-37410ab52781/images/89ee1f0413f7c7d6a1634b1004644f9ffabf68d2d17546d1fbf48358d1dd5789.png",
+      "description": "3D Bitcoin for Balance or Rewards visuals"
+    },
+    "dashboard_bg": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/9b98805d-6f48-4c52-a95c-37410ab52781/images/e1bdbcc3ca21d337dcc662f55d9d5dc3d4cb29a6d9c1ff22e40dd80173ff8e80.png",
+      "description": "Abstract neon background for hero or top area of dashboard"
+    },
+    "server_rack": {
+      "url": "https://images.unsplash.com/photo-1680992044138-ce4864c2b962?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwxfHxzZXJ2ZXIlMjByb29tJTIwZGFyayUyMG5lb258ZW58MHx8fHwxNzc5MzA2MzEwfDA&ixlib=rb-4.1.0&q=85",
+      "description": "Server room neon for packages/shop background texture"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Design specifically for mobile viewport/React Native Expo guidelines but use provided standard tokens.",
+    "Use JetBrains Mono for all numeric values (Balances, Hash Rates, Prices) to achieve the technical fintech feel.",
+    "Apply 'pulse-glow' animation to the Active Mining Machine card using Reanimated or CSS keyframes.",
+    "Do NOT use pure white for the background. Stick strictly to #0B0E14 for main backgrounds to maintain contrast.",
+    "For the bottom navigation, use a glassmorphism effect (blur + semi-transparent bg) and highlight the active icon with #00FFA3.",
+    "Wrap interactive elements with 'data-testid' for testing (e.g., data-testid='withdraw-btn').",
+    "Use Phosphor Icons, Lucide React, or @expo/vector-icons for crisp iconography matching the premium look."
+  ]
+}
