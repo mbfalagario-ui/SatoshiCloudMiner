@@ -1,0 +1,97 @@
+{
+  "summary": "HashCloud full backend + frontend (Expo web) test pass. Backend 20/20 pytest pass (1 skipped due to no top-up endpoint). Frontend onboarding, sign up, sign in, dashboard population, shop list, wallet form, profile/referral all render and load data correctly. Primary issue: Alert.alert(...) with button arrays does not fire button callbacks on react-native-web — affects buy confirmation, withdraw submit confirmation, and sign-out confirmation flows on web preview (will work on iOS native).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/withdraw (success path)",
+        "issue": "Cannot easily test successful withdrawal in CI because welcome-miner ($0.10/day) accrues too slowly to reach $1 min in a few seconds and there is no admin/seed top-up endpoint. Validation/insufficient-balance/min-amount/invalid-method all confirmed working. Test marked SKIPPED rather than failed."
+      },
+      {
+        "endpoint": "general",
+        "issue": "FastAPI on_event('startup'/'shutdown') is deprecated in favor of lifespan handlers (warning only)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Profile / Sign out",
+        "issue": "Tapping 'Sign out' button shows no confirmation dialog and does NOT log the user out on web. URL stays at /profile and session remains active. Root cause: Alert.alert(title, msg, [buttons]) in react-native-web ignores the buttons array and never invokes the destructive button's onPress, so signOut() + router.replace('/') is never called.",
+        "testID": "profile-logout-btn",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Shop / Buy",
+        "issue": "Tapping Buy on a package on web shows no confirmation modal and does not invoke the purchase API. Same Alert.alert-with-buttons limitation on web. (On iOS native this should work.)",
+        "testID": "pkg-buy-starter_099",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Wallet / Submit withdrawal",
+        "issue": "Tapping Submit on the withdrawal form on web does not show a confirmation modal or trigger the API. Same Alert.alert-with-buttons limitation. The form fields, method picker and MAX button themselves all work.",
+        "testID": "wallet-submit-btn",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Wallet / MAX button",
+        "issue": "When user balance is $0.00, tapping MAX leaves the amount input empty rather than filling '0.00'. Minor UX nit — non-blocking.",
+        "testID": "wallet-max-btn",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Auth -> session persistence",
+        "issue": "Sign up and Sign in both correctly persist JWT and immediately navigate to (tabs)/index. /auth/me, /dashboard, /machines all called with Authorization header. No issues observed.",
+        "affected_testIDs": []
+      },
+      {
+        "flow": "Web confirmation dialogs",
+        "issue": "react-native-web's Alert.alert silently no-ops when a buttons[] array is passed (it doesn't render a modal and doesn't fire onPress handlers). Recommend wrapping in a Platform.OS === 'web' check that uses window.confirm or a custom RN Modal-based confirm dialog for: profile logout, shop buy, wallet withdrawal submission.",
+        "affected_testIDs": ["profile-logout-btn", "pkg-buy-starter_099", "wallet-submit-btn"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "All",
+        "issues": [
+          "Console warnings: 'shadow*' style props deprecated (use boxShadow); Image style.resizeMode deprecated (use props.resizeMode); props.pointerEvents deprecated. Non-blocking but should be cleaned up.",
+          "Animated.useNativeDriver warning on web — expected (web has no native driver), non-blocking."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Replace Alert.alert(title, msg, [buttons]) with a cross-platform confirm helper (e.g., Platform.OS === 'web' ? window.confirm(...) : Alert.alert(...)) or a custom Modal-based ConfirmDialog. Apply to: profile.tsx onLogout, shop.tsx buy handler, wallet.tsx withdraw handler.",
+    "Optional: make wallet MAX button write '0.00' instead of '' when balance is zero.",
+    "Optional: migrate FastAPI startup/shutdown events to lifespan context manager.",
+    "Optional: silence deprecated shadow*/resizeMode/pointerEvents style warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 778 lines — still readable but approaching the 700-line guideline. Consider splitting into routers/ (auth.py, dashboard.py, shop.py, wallet.py).",
+    "POST /api/packages/buy and POST /api/withdraw are correctly flagged MOCKED (no real IAP receipt validation / no real payout) — this matches the request and is the expected behavior for App Store submission scaffolding.",
+    "Mongo _id is correctly excluded in all serializers and queries.",
+    "JWT secret is loaded from env, no hardcoding.",
+    "All interactive components have testID attributes — excellent test coverage."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (created)",
+    "/app/test_reports/pytest/pytest_results.xml (generated)",
+    "/app/test_reports/iteration_1.json (created)"
+  ],
+  "success_rate": {
+    "backend": "100% (20/20 passed, 1 skipped by design)",
+    "frontend": "~70% — render/data flows all work; 3 user-action confirmation flows (logout, buy, withdraw) silently fail on web due to react-native-web Alert.alert limitation"
+  },
+  "seed_data_creation": "Multiple TEST_* users created during pytest runs (idempotent — unique emails per run). Existing seeded user test@hashcloud.app / password123 verified working for sign-in.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend is rock solid; only re-test if server.py changes. Frontend: after main agent swaps Alert.alert(buttons) for a web-compatible confirm, re-run the Playwright flow at /app for: (a) profile-logout-btn -> dialog -> Sign out -> lands on onboarding-get-started-btn; (b) pkg-buy-starter_099 -> confirm -> /api/packages/buy returns 200 and dashboard hash_rate increases; (c) wallet-submit-btn with valid method+address+amount<=balance -> confirm -> /api/withdraw returns 200, transaction status 'pending'. MAX button shows '' when balance=0 (low-priority cosmetic).",
+  "rca_of_issue": "Root cause of the 3 frontend failures: react-native-web does not implement Alert.alert(title, message, buttons[]) — when buttons are provided it silently no-ops. As a result, the destructive/confirm buttons never invoke their onPress callbacks, so signOut(), purchase API call, and withdraw API call never execute on the web preview. Reproduction: (1) sign in, (2) navigate to Profile tab, (3) tap 'Sign out' button — no modal appears, no logout happens, URL remains /profile. Mitigation: implement a small confirm helper, e.g. const confirm = (t,m,onYes) => Platform.OS === 'web' ? (window.confirm(`${t}\\n${m}`) && onYes()) : Alert.alert(t,m,[{text:'Cancel',style:'cancel'},{text:'OK',style:'destructive',onPress:onYes}]); and use it in profile.tsx, shop.tsx, wallet.tsx."
+}

@@ -1,21 +1,34 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "HashCloud",
+    "slug": "hashcloud",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
-    "userInterfaceStyle": "automatic",
+    "scheme": "hashcloud",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "description": "HashCloud — cloud computing performance monitoring and management. Track simulated hashpower, manage virtual computing packages, and review your activity in a polished dark interface.",
+    "primaryColor": "#00FFA3",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "app.hashcloud.mobile",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSUserTrackingUsageDescription": "Allow HashCloud to use your identifier to improve relevance of ads we show."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "backgroundColor": "#0B0E14"
       },
+      "package": "app.hashcloud.mobile",
+      "versionCode": 1,
       "edgeToEdgeEnabled": true
     },
     "web": {
@@ -25,13 +38,14 @@
     },
     "plugins": [
       "expo-router",
+      "expo-secure-store",
       [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000"
+          "backgroundColor": "#0B0E14"
         }
       ]
     ],
