@@ -6,7 +6,6 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   Image,
   RefreshControl,
 } from 'react-native';
@@ -15,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/utils/api';
 import { colors, spacing, radius, fonts, shadows, media, fmtUsd } from '@/src/utils/theme';
 import { useSession } from '@/src/ctx';
+import { confirmDialog, notify } from '@/src/utils/dialog';
 
 type Pkg = {
   id: string;
@@ -49,34 +49,28 @@ export default function Shop() {
   }, [load]);
 
   const buy = (pkg: Pkg) => {
-    Alert.alert(
+    confirmDialog(
       'Confirm purchase',
       `Buy "${pkg.name}" for ${fmtUsd(pkg.price_usd)}?\n\nIn the App Store version, this will be processed via Apple In-App Purchase.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Buy now',
-          style: 'default',
-          onPress: async () => {
-            setBuyingId(pkg.id);
-            try {
-              const r = await api('/packages/buy', {
-                method: 'POST',
-                body: JSON.stringify({ package_id: pkg.id }),
-              });
-              await refresh();
-              Alert.alert(
-                'Purchase successful',
-                `${r.machines_added} miner${r.machines_added > 1 ? 's' : ''} added to your account.`
-              );
-            } catch (e: any) {
-              Alert.alert('Purchase failed', e?.message ?? 'Try again.');
-            } finally {
-              setBuyingId(null);
-            }
-          },
-        },
-      ]
+      async () => {
+        setBuyingId(pkg.id);
+        try {
+          const r = await api('/packages/buy', {
+            method: 'POST',
+            body: JSON.stringify({ package_id: pkg.id }),
+          });
+          await refresh();
+          notify(
+            'Purchase successful',
+            `${r.machines_added} miner${r.machines_added > 1 ? 's' : ''} added to your account.`
+          );
+        } catch (e: any) {
+          notify('Purchase failed', e?.message ?? 'Try again.');
+        } finally {
+          setBuyingId(null);
+        }
+      },
+      'Buy now'
     );
   };
 

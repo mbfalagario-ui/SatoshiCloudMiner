@@ -1,10 +1,11 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, fonts, fmtUsd, fmtBtc } from '@/src/utils/theme';
 import { useSession } from '@/src/ctx';
+import { confirmDialog, notify } from '@/src/utils/dialog';
 
 export default function Profile() {
   const router = useRouter();
@@ -32,7 +33,7 @@ export default function Profile() {
       label: 'Contact support',
       testID: 'profile-support',
       onPress: () =>
-        Alert.alert(
+        notify(
           'Contact support',
           'Reach us at support@hashcloud.app — we typically respond within 24 hours.'
         ),
@@ -40,17 +41,10 @@ export default function Profile() {
   ];
 
   const onLogout = () => {
-    Alert.alert('Sign out?', 'You will need to sign in again.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign out',
-        style: 'destructive',
-        onPress: async () => {
-          await signOut();
-          router.replace('/');
-        },
-      },
-    ]);
+    confirmDialog('Sign out?', 'You will need to sign in again.', async () => {
+      await signOut();
+      router.replace('/');
+    }, 'Sign out');
   };
 
   return (

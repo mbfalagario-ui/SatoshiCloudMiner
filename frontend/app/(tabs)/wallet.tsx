@@ -8,7 +8,6 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
@@ -18,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/utils/api';
 import { useSession } from '@/src/ctx';
 import { colors, spacing, radius, fonts, fmtUsd, shadows } from '@/src/utils/theme';
+import { notify } from '@/src/utils/dialog';
 
 type Method = { id: string; name: string; subtitle: string; icon: string };
 
@@ -52,10 +52,10 @@ export default function Wallet() {
 
   const submit = async () => {
     const n = parseFloat(amount);
-    if (!selected) return Alert.alert('Choose method', 'Please select a withdrawal method.');
-    if (!address.trim()) return Alert.alert('Address required', 'Enter wallet address or destination.');
-    if (!n || n < minUsd) return Alert.alert('Amount too low', `Minimum withdrawal is ${fmtUsd(minUsd)}.`);
-    if (n > (user?.balance_usd ?? 0)) return Alert.alert('Insufficient balance', 'You do not have enough balance.');
+    if (!selected) return notify('Choose method', 'Please select a withdrawal method.');
+    if (!address.trim()) return notify('Address required', 'Enter wallet address or destination.');
+    if (!n || n < minUsd) return notify('Amount too low', `Minimum withdrawal is ${fmtUsd(minUsd)}.`);
+    if (n > (user?.balance_usd ?? 0)) return notify('Insufficient balance', 'You do not have enough balance.');
 
     setSubmitting(true);
     try {
@@ -66,12 +66,12 @@ export default function Wallet() {
       await refresh();
       setAddress('');
       setAmount('');
-      Alert.alert(
+      notify(
         'Withdrawal requested',
         'Your withdrawal is being processed. You can track it in the transaction history.'
       );
     } catch (e: any) {
-      Alert.alert('Withdrawal failed', e?.message ?? 'Please try again.');
+      notify('Withdrawal failed', e?.message ?? 'Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -160,7 +160,7 @@ export default function Wallet() {
             />
             <TouchableOpacity
               testID="wallet-max-btn"
-              onPress={() => setAmount(Math.min(user?.balance_usd ?? 0, maxDaily).toFixed(2))}
+              onPress={() => setAmount(Math.max(0, Math.min(user?.balance_usd ?? 0, maxDaily)).toFixed(2))}
               style={styles.maxBtn}
             >
               <Text style={styles.maxBtnText}>MAX</Text>
