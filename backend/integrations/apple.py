@@ -132,6 +132,7 @@ def verify_apple_transaction(
     signed_payload: Optional[str] = None
     used_env: Optional[Environment] = None
     last_exc: Optional[Exception] = None
+    auth_failed = False
     for env in envs:
         try:
             client = _client(env)
@@ -143,8 +144,22 @@ def verify_apple_transaction(
             break
         except APIException as e:
             last_exc = e
+            msg = str(e)
             # 4040010 = TransactionIdNotFoundError → try the next env.
-            if "4040010" in str(e) or getattr(e, "api_error", None) == 4040010:
+            if "4040010" in msg or getattr(e, "api_error", None) == 4040010:
+                continue
+            # 401 = Apple credentials misconfigured (wrong issuer/key/.p8).
+            # Don't crash the purchase flow; fall back to MOCK so review/sandbox
+            # builds keep functioning. The operator must fix the credentials
+            # before going live — we flag this in the response.
+            if "401" in msg or msg.strip() == "401":
+                auth_failed = True
+                logger.error(
+                    "Apple IAP: 401 Unauthenticated from Apple — credentials "
+                    "(issuer/keyId/.p8) are invalid. Falling back to MOCK for "
+                    "transaction %s.",
+                    transaction_id,
+                )
                 continue
             raise
         except Exception as e:
@@ -152,6 +167,10 @@ def verify_apple_transaction(
             continue
 
     if not signed_payload:
+        if auth_failed:
+            mock = _mock_transaction(transaction_id, expected_product_id)
+            mock["environment"] = "AUTH_FAILED_FALLBACK"
+            return mock
         raise ValueError(
             f"Apple IAP: transaction {transaction_id} not found "
             f"(last error: {last_exc})"

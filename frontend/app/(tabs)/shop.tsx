@@ -15,6 +15,7 @@ import { api } from '@/src/utils/api';
 import { colors, spacing, radius, fonts, shadows, media, fmtUsd } from '@/src/utils/theme';
 import { useSession } from '@/src/ctx';
 import { confirmDialog, notify } from '@/src/utils/dialog';
+import { isIapAvailable, initIap, buyProduct } from '@/src/utils/iap';
 
 type Pkg = {
   id: string;
@@ -46,18 +47,37 @@ export default function Shop() {
 
   useEffect(() => {
     load();
+    // Pre-warm StoreKit connection so the first tap on "Buy" is instant.
+    if (isIapAvailable()) initIap().catch(() => {});
   }, [load]);
 
   const buy = (pkg: Pkg) => {
+    const iapOn = isIapAvailable();
     confirmDialog(
       'Confirm purchase',
-      `Buy "${pkg.name}" for ${fmtUsd(pkg.price_usd)}?\n\nIn the App Store version, this will be processed via Apple In-App Purchase.`,
+      iapOn
+        ? `Buy "${pkg.name}" for ${fmtUsd(pkg.price_usd)}?\n\nApple's purchase sheet will appear next. You'll be charged via your Apple ID.`
+        : `Buy "${pkg.name}" for ${fmtUsd(pkg.price_usd)}?\n\nDev mode: purchase will be simulated. On a real iOS build this triggers Apple In-App Purchase.`,
       async () => {
         setBuyingId(pkg.id);
         try {
+          let appleTransactionId: string | undefined;
+          if (iapOn) {
+            const r = await buyProduct(pkg.id);
+            if (!r.applePurchase || !r.transactionId) {
+              throw new Error('Apple did not return a transaction id.');
+            }
+            appleTransactionId = r.transactionId;
+          }
+
+          const body: { package_id: string; apple_transaction_id?: string } = {
+            package_id: pkg.id,
+          };
+          if (appleTransactionId) body.apple_transaction_id = appleTransactionId;
+
           const r = await api('/packages/buy', {
             method: 'POST',
-            body: JSON.stringify({ package_id: pkg.id }),
+            body: JSON.stringify(body),
           });
           await refresh();
           notify(

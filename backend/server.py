@@ -17,7 +17,7 @@ import bcrypt
 import jwt as pyjwt
 
 from integrations.apple import verify_apple_transaction
-from integrations.btcpay import create_payout as btcpay_create_payout, get_payout as btcpay_get_payout
+from integrations.blink import create_payout as blink_create_payout, get_payout as blink_get_payout
 
 
 ROOT_DIR = Path(__file__).parent
@@ -658,12 +658,12 @@ async def withdraw(
     )
 
     # ------------------------------------------------------------------
-    # BTCPay Server payout (real Lightning / on-chain BTC).
-    # Falls back to a mock `pending` payout if BTCPay isn't configured.
+    # Blink Wallet payout (real Lightning / on-chain BTC).
+    # Falls back to a mock `pending` payout if Blink isn't configured.
     # If the live call fails, we refund the user's balance immediately.
     # ------------------------------------------------------------------
     try:
-        payout = btcpay_create_payout(
+        payout = blink_create_payout(
             amount_usd=payload.amount_usd,
             destination=payload.address,
             description=f"HashCloud withdrawal via {method['name']}",
@@ -673,7 +673,7 @@ async def withdraw(
         await db.users.update_one(
             {"id": current_user["id"]}, {"$inc": {"balance_btc": amount_btc}}
         )
-        logger.exception("BTCPay payout failed")
+        logger.exception("Blink payout failed")
         raise HTTPException(status_code=502, detail=f"Payout provider error: {e}")
 
     tx = {
@@ -686,12 +686,12 @@ async def withdraw(
         "method": method["name"],
         "address": payload.address,
         "description": f"Withdrawal via {method['name']}",
-        "btcpay_provider": payout.get("provider"),
-        "btcpay_payout_id": payout.get("payout_id"),
-        "btcpay_pull_payment_id": payout.get("pull_payment_id"),
-        "btcpay_state": payout.get("btcpay_state"),
-        "btcpay_view_url": payout.get("view_url"),
-        "payment_method": payout.get("payment_method"),
+        "blink_provider": payout.get("provider"),
+        "blink_payout_id": payout.get("payout_id"),
+        "blink_state": payout.get("blink_state"),
+        "blink_view_url": payout.get("view_url"),
+        "amount_sats": payout.get("amount_sats"),
+        "destination_kind": payout.get("kind"),
         "created_at": now_utc().isoformat(),
     }
     await db.transactions.insert_one({**tx})
@@ -707,18 +707,18 @@ async def withdraw_status(tx_id: str, current_user: Dict[str, Any] = Depends(get
     )
     if not tx:
         raise HTTPException(status_code=404, detail="Withdrawal not found")
-    payout_id = tx.get("btcpay_payout_id")
+    payout_id = tx.get("blink_payout_id")
     if not payout_id:
         return {"transaction": tx, "live_status": None}
     try:
-        live = btcpay_get_payout(payout_id)
+        live = blink_get_payout(payout_id)
     except Exception as e:
         return {"transaction": tx, "live_status": None, "error": str(e)}
     # Update stored status if it changed
     if live.get("status") and live["status"] != tx.get("status"):
         await db.transactions.update_one(
             {"id": tx_id},
-            {"$set": {"status": live["status"], "btcpay_state": live.get("btcpay_state")}},
+            {"$set": {"status": live["status"], "blink_state": live.get("blink_state")}},
         )
         tx["status"] = live["status"]
     return {"transaction": tx, "live_status": live}
