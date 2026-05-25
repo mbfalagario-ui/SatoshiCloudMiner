@@ -70,26 +70,9 @@ async def login(page, base, email, password):
       if (!r.ok) return {ok:false, status:r.status, data:r.data};
       const token = r.data.access_token;
 
-      // Persist token in AsyncStorage (web shim → IndexedDB).
-      const open = indexedDB.open('AsyncStorage');
-      await new Promise((res, rej) => {
-        open.onupgradeneeded = () => {
-          const db = open.result;
-          if (!db.objectStoreNames.contains('keyvaluepairs')) {
-            db.createObjectStore('keyvaluepairs');
-          }
-        };
-        open.onsuccess = res;
-        open.onerror = () => rej(open.error);
-      });
-      const db = open.result;
-      await new Promise((res, rej) => {
-        const tx = db.transaction('keyvaluepairs', 'readwrite');
-        tx.objectStore('keyvaluepairs').put(JSON.stringify(token), 'hc_access_token');
-        tx.oncomplete = res;
-        tx.onerror = () => rej(tx.error);
-      });
-      db.close();
+      // Persist the JWT exactly where the @react-native-async-storage web
+      // adapter looks for it: window.localStorage. Values are JSON-encoded.
+      window.localStorage.setItem('hc_access_token', JSON.stringify(token));
       return {ok:true};
     }
     """
