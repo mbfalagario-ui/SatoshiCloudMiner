@@ -554,6 +554,8 @@ async def login(payload: UserLogin):
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(payload.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    if user.get("is_banned"):
+        raise HTTPException(status_code=403, detail="Account suspended")
     token = create_access_token(user["id"], user["email"])
     return TokenOut(access_token=token, user=serialize_user_public(user))
 
