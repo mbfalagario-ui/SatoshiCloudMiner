@@ -49,12 +49,13 @@ SATS_PER_BTC = 100_000_000
 DAILY_CHECKIN_REWARD_USD = 0.05  # $0.05 awarded as BTC equivalent
 REFERRAL_BONUS_USD = 0.50
 
-# Withdrawal limits are now denominated in SATS (Lightning-only flow).
-MIN_WITHDRAW_SATS = 20         # 0.00000020 BTC
-MAX_WITHDRAW_SATS = 2_500      # 0.00002500 BTC
-WITHDRAW_FEE_PCT = 0.05        # 5% routing/processing fee
-WITHDRAW_FEE_FLAT_SATS = 1     # +1 sat baseline
-MAX_DAILY_WITHDRAW_SATS = 2_500  # rolling 24h cap (= 1 max-size withdrawal)
+# Withdrawal limits are denominated in SATS (Lightning-only flow).
+# Updated June-2025: minimum 0.00150000 BTC, no maximum, flat 10% fee.
+MIN_WITHDRAW_SATS = 150_000     # 0.00150000 BTC
+MAX_WITHDRAW_SATS = 10_000_000  # 0.10000000 BTC (safety ceiling — UI shows "no max")
+WITHDRAW_FEE_PCT = 0.10         # flat 10% routing/processing fee
+WITHDRAW_FEE_FLAT_SATS = 0      # no baseline; the 10% covers network costs
+MAX_DAILY_WITHDRAW_SATS = 10_000_000  # effectively no daily cap
 
 # Predefined shop packages. Names, taglines, and pricing are original to this
 # app; the tier ladder is a common cloud-mining structure (small starter, BOGO
@@ -190,6 +191,25 @@ SHOP_PACKAGES = [
         "ai_optimized": True,
         "profitability_score": 4.9,
     },
+    # ------------------------------------------------------------------
+    # One-time entitlement: removes interstitial ads + unlocks priority
+    # support. Tracked on the User document as `ad_free=True` instead of
+    # creating a machine.
+    # ------------------------------------------------------------------
+    {
+        "id": "adfree_399",
+        "name": "Ad-Free + Priority Support",
+        "tagline": "One-time unlock · no ads, faster support",
+        "price_usd": 3.99,
+        "hash_rate": 0.0,
+        "duration_days": 0,
+        "daily_yield_usd": 0.0,
+        "badge": "UPGRADE",
+        "bogo": False,
+        "ai_optimized": False,
+        "profitability_score": 0.0,
+        "entitlement": "ad_free",   # marker — backend handles this specially
+    },
 ]
 
 
@@ -321,8 +341,8 @@ def btc_to_sats(btc: float) -> int:
 
 
 def withdrawal_fee_sats(amount_sats: int) -> int:
-    return max(WITHDRAW_FEE_FLAT_SATS,
-               int(amount_sats * WITHDRAW_FEE_PCT) + WITHDRAW_FEE_FLAT_SATS)
+    # Flat 10% fee — no baseline (covers Lightning routing + processing).
+    return max(0, int(round(amount_sats * WITHDRAW_FEE_PCT)))
 
 
 async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> Dict[str, Any]:
@@ -470,6 +490,8 @@ def serialize_user_public(u: Dict[str, Any]) -> Dict[str, Any]:
         "lifetime_sats": btc_to_sats(lifetime_btc),
         "lifetime_usd": round(btc_to_usd(lifetime_btc), 2),
         "is_admin": bool(u.get("is_admin", False)),
+        "is_banned": bool(u.get("is_banned", False)),
+        "ad_free": bool(u.get("ad_free", False)),
         "auto_checkin": bool(u.get("auto_checkin", True)),
         "auto_reinvest": bool(u.get("auto_reinvest", False)),
         "auto_reinvest_min_balance_usd": float(u.get("auto_reinvest_min_balance_usd", 4.99)),
@@ -651,6 +673,46 @@ async def buy_package(
         except Exception as e:
             logger.exception("Apple IAP verification crashed")
             raise HTTPException(status_code=500, detail=f"Apple IAP verification error: {e}")
+
+    # ------------------------------------------------------------------
+    # Entitlement products (no machine — just flip a user flag, e.g. ad_free)
+    # ------------------------------------------------------------------
+    entitlement = pkg.get("entitlement")
+    if entitlement == "ad_free":
+        already = bool(current_user.get("ad_free"))
+        if already:
+            raise HTTPException(status_code=400, detail="You already own the Ad-Free upgrade.")
+        await db.users.update_one(
+            {"id": current_user["id"]},
+            {"$set": {"ad_free": True, "ad_free_purchased_at": now.isoformat()}},
+        )
+        await db.transactions.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": current_user["id"],
+                "type": "purchase",
+                "amount_usd": pkg["price_usd"],
+                "amount_btc": 0.0,
+                "status": "completed",
+                "description": f"Purchased {pkg['name']}",
+                "package_id": pkg["id"],
+                "entitlement": "ad_free",
+                "apple_transaction_id": payload.apple_transaction_id,
+                "apple_environment": apple_info.get("environment"),
+                "apple_mocked": bool(apple_info.get("_mocked")),
+                "created_at": now.isoformat(),
+            }
+        )
+        return {
+            "success": True,
+            "machines_added": 0,
+            "entitlement_granted": "ad_free",
+            "package": pkg,
+            "apple": {
+                "verified": not apple_info.get("_mocked", True),
+                "environment": apple_info.get("environment"),
+            },
+        }
 
     def _make_machine(suffix: str = "") -> Dict[str, Any]:
         return {

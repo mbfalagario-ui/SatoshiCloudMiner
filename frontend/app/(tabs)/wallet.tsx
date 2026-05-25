@@ -88,8 +88,8 @@ export default function Wallet() {
 
   const submit = async () => {
     if (!address.trim()) return notify('Destination required', 'Paste a Lightning invoice (lnbc…) or address (you@host).');
-    if (sats < minSats) return notify('Amount too low', `Minimum withdrawal is ${fmtSats(minSats)} (≈$${((minSats / SATS_PER_BTC) * btcUsd).toFixed(4)}).`);
-    if (sats > maxSats) return notify('Amount too high', `Maximum withdrawal is ${fmtSats(maxSats)} (≈$${((maxSats / SATS_PER_BTC) * btcUsd).toFixed(4)}).`);
+    if (sats < minSats) return notify('Amount too low', `Minimum withdrawal is ${fmtSats(minSats)} (≈$${((minSats / SATS_PER_BTC) * btcUsd).toFixed(2)}).`);
+    if (sats > maxSats) return notify('Amount too high', `Single withdrawal is capped at ${fmtSats(maxSats)} for safety.`);
     if (total > balanceSats) return notify('Insufficient balance', `You need ${fmtSats(total)} (incl. ${fmtSats(fee)} fee) but only have ${fmtSats(balanceSats)}.`);
 
     setSubmitting(true);
@@ -136,7 +136,7 @@ export default function Wallet() {
             <View style={styles.limitRow}>
               <Ionicons name="information-circle-outline" size={14} color={colors.textTertiary} />
               <Text style={styles.limitText}>
-                {fmtSats(minSats)} min · {fmtSats(maxSats)} max · fee {(feePct * 100).toFixed(1)}% + {feeFlat} sat
+                Min {fmtSats(minSats)} · No max · flat {(feePct * 100).toFixed(0)}% network fee
               </Text>
             </View>
           </View>
@@ -187,7 +187,7 @@ export default function Wallet() {
             <Text style={{ color: colors.textTertiary, fontSize: 13, fontWeight: '700', letterSpacing: 1 }}>SAT</Text>
             <TextInput
               testID="wallet-amount-input"
-              placeholder={`${minSats} - ${maxSats}`}
+              placeholder={`Min ${minSats.toLocaleString()}`}
               placeholderTextColor={colors.textTertiary}
               keyboardType="number-pad"
               value={amountSatsStr}
@@ -196,7 +196,11 @@ export default function Wallet() {
             />
             <TouchableOpacity
               testID="wallet-max-btn"
-              onPress={() => setAmountSatsStr(String(Math.max(0, Math.min(balanceSats - feeFlat - 1, maxSats))))}
+              onPress={() => {
+                // Send all available balance, leaving room for the 10% fee.
+                const sendable = Math.floor(balanceSats / (1 + feePct));
+                setAmountSatsStr(String(Math.max(0, sendable)));
+              }}
               style={styles.maxBtn}
             >
               <Text style={styles.maxBtnText}>MAX</Text>

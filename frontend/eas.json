@@ -9,31 +9,32 @@
       "distribution": "internal",
       "ios": {
         "simulator": false
-      },
-      "channel": "development"
+      }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
         "simulator": false,
         "resourceClass": "m-medium"
-      },
-      "channel": "preview"
+      }
     },
     "production": {
       "autoIncrement": true,
+      "credentialsSource": "local",
       "ios": {
         "resourceClass": "m-medium"
-      },
-      "channel": "production"
+      }
     }
   },
   "submit": {
     "production": {
       "ios": {
-        "appleId": "REPLACE_WITH_YOUR_APPLE_ID_EMAIL",
-        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID_AFTER_CREATION",
-        "appleTeamId": "UHF3KNM9F9"
+        "appleId": "mbfalagario@gmail.com",
+        "ascAppId": "6773104756",
+        "appleTeamId": "UHF3KNM9F9",
+        "ascApiKeyPath": "../backend/keys/AuthKey_WFQJ6L9KXS.p8",
+        "ascApiKeyId": "WFQJ6L9KXS",
+        "ascApiKeyIssuerId": "d3284874-7bd8-4eff-b272-c9ef0122df9a"
       }
     }
   }

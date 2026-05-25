@@ -1,15 +1,17 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform, View, StyleSheet, ActivityIndicator } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { colors } from '@/src/utils/theme';
 import { useSession } from '@/src/ctx';
-import { useEffect } from 'react';
+import { useAds } from '@/src/AdContext';
 
 export default function TabsLayout() {
   const { user, loading } = useSession();
+  const { showInterstitial } = useAds();
   const router = useRouter();
+  const lastTabRef = useRef<string>('index');
 
   useEffect(() => {
     if (!loading && !user) {
@@ -24,6 +26,15 @@ export default function TabsLayout() {
       </View>
     );
   }
+
+  // Fire an interstitial when the user transitions between tabs.
+  const onTabPress = (name: string) => {
+    if (name !== lastTabRef.current) {
+      lastTabRef.current = name;
+      // Fire-and-forget — AdProvider handles the gap/throttling itself.
+      showInterstitial(`tab:${name}`).catch(() => {});
+    }
+  };
 
   return (
     <Tabs
@@ -64,6 +75,7 @@ export default function TabsLayout() {
             <Ionicons name="home" size={size} color={color} />
           ),
         }}
+        listeners={{ tabPress: () => onTabPress('index') }}
       />
       <Tabs.Screen
         name="shop"
@@ -73,6 +85,7 @@ export default function TabsLayout() {
             <Ionicons name="hardware-chip" size={size} color={color} />
           ),
         }}
+        listeners={{ tabPress: () => onTabPress('shop') }}
       />
       <Tabs.Screen
         name="wallet"
@@ -82,6 +95,7 @@ export default function TabsLayout() {
             <Ionicons name="wallet" size={size} color={color} />
           ),
         }}
+        listeners={{ tabPress: () => onTabPress('wallet') }}
       />
       <Tabs.Screen
         name="profile"
@@ -91,6 +105,7 @@ export default function TabsLayout() {
             <Ionicons name="person-circle" size={size} color={color} />
           ),
         }}
+        listeners={{ tabPress: () => onTabPress('profile') }}
       />
     </Tabs>
   );
