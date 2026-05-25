@@ -63,7 +63,7 @@ export default function Onboarding() {
         </Text>
 
         <Text style={styles.subtitle}>
-          HashCloud puts a cloud mining farm in your pocket. No rigs, no setup —
+          Satoshi Cloud Miner puts a cloud mining farm in your pocket. No rigs, no setup —
           just instant access to enterprise hash power and live earnings.
         </Text>
 

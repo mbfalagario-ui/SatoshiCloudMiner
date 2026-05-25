@@ -1,1 +1,1 @@
-cloud,mining,monitor,hashpower,btc,lightning,wallet,dashboard,rewards,utility
+bitcoin,mining,lightning,sats,hashrate,cluster,dashboard,monitor,yield,ai,agents,btc,wallet,payout,utility

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -16,8 +16,16 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/utils/api';
 import { useSession } from '@/src/ctx';
-import { colors, spacing, radius, fonts, fmtUsd, shadows } from '@/src/utils/theme';
+import { colors, spacing, radius, fonts, shadows } from '@/src/utils/theme';
 import { notify } from '@/src/utils/dialog';
+import {
+  SATS_PER_BTC,
+  fmtSats,
+  WITHDRAW_MIN_SATS,
+  WITHDRAW_MAX_SATS,
+  WITHDRAW_FEE_PCT,
+  WITHDRAW_FEE_FLAT_SATS,
+} from '@/src/utils/sats';
 
 type Method = { id: string; name: string; subtitle: string; icon: string };
 
@@ -25,22 +33,28 @@ export default function Wallet() {
   const router = useRouter();
   const { user, refresh } = useSession();
   const [methods, setMethods] = useState<Method[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
   const [address, setAddress] = useState('');
-  const [amount, setAmount] = useState('');
-  const [minUsd, setMinUsd] = useState(1);
-  const [maxDaily, setMaxDaily] = useState(2);
+  const [amountSatsStr, setAmountSatsStr] = useState('');
+  const [minSats, setMinSats] = useState(WITHDRAW_MIN_SATS);
+  const [maxSats, setMaxSats] = useState(WITHDRAW_MAX_SATS);
+  const [feePct, setFeePct] = useState(WITHDRAW_FEE_PCT);
+  const [feeFlat, setFeeFlat] = useState(WITHDRAW_FEE_FLAT_SATS);
+  const [btcUsd, setBtcUsd] = useState(65000);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const r = await api('/withdraw/methods');
-      setMethods(r.methods);
-      setMinUsd(r.min_usd);
-      setMaxDaily(r.max_daily_usd);
-    } catch {}
-    finally {
+      setMethods(r.methods || []);
+      if (typeof r.min_sats === 'number') setMinSats(r.min_sats);
+      if (typeof r.max_sats === 'number') setMaxSats(r.max_sats);
+      if (typeof r.fee_pct === 'number') setFeePct(r.fee_pct);
+      if (typeof r.fee_flat_sats === 'number') setFeeFlat(r.fee_flat_sats);
+      if (typeof r.btc_usd_rate === 'number') setBtcUsd(r.btc_usd_rate);
+    } catch {
+      // keep defaults
+    } finally {
       setLoading(false);
     }
   }, []);
@@ -50,25 +64,50 @@ export default function Wallet() {
     refresh();
   }, [load, refresh]);
 
+  const sats = useMemo(() => {
+    const n = parseInt(amountSatsStr || '0', 10);
+    return isFinite(n) ? n : 0;
+  }, [amountSatsStr]);
+
+  const fee = useMemo(() => {
+    if (sats <= 0) return 0;
+    return Math.max(feeFlat, Math.ceil(sats * feePct) + feeFlat);
+  }, [sats, feePct, feeFlat]);
+
+  const total = sats + fee;
+  const balanceSats = user?.balance_sats ?? Math.round((user?.balance_btc ?? 0) * SATS_PER_BTC);
+  const usdValue = (sats / SATS_PER_BTC) * btcUsd;
+
+  const detected = useMemo(() => {
+    const a = address.trim().toLowerCase();
+    if (a.startsWith('lnbc') || a.startsWith('lntb') || a.startsWith('lnbcrt')) return 'BOLT11 invoice';
+    if (/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(a)) return 'Lightning address';
+    if (a.length > 0) return 'Unknown — Lightning only';
+    return '';
+  }, [address]);
+
   const submit = async () => {
-    const n = parseFloat(amount);
-    if (!selected) return notify('Choose method', 'Please select a withdrawal method.');
-    if (!address.trim()) return notify('Address required', 'Enter wallet address or destination.');
-    if (!n || n < minUsd) return notify('Amount too low', `Minimum withdrawal is ${fmtUsd(minUsd)}.`);
-    if (n > (user?.balance_usd ?? 0)) return notify('Insufficient balance', 'You do not have enough balance.');
+    if (!address.trim()) return notify('Destination required', 'Paste a Lightning invoice (lnbc…) or address (you@host).');
+    if (sats < minSats) return notify('Amount too low', `Minimum withdrawal is ${fmtSats(minSats)} (≈$${((minSats / SATS_PER_BTC) * btcUsd).toFixed(4)}).`);
+    if (sats > maxSats) return notify('Amount too high', `Maximum withdrawal is ${fmtSats(maxSats)} (≈$${((maxSats / SATS_PER_BTC) * btcUsd).toFixed(4)}).`);
+    if (total > balanceSats) return notify('Insufficient balance', `You need ${fmtSats(total)} (incl. ${fmtSats(fee)} fee) but only have ${fmtSats(balanceSats)}.`);
 
     setSubmitting(true);
     try {
       await api('/withdraw', {
         method: 'POST',
-        body: JSON.stringify({ method_id: selected, address: address.trim(), amount_usd: n }),
+        body: JSON.stringify({
+          method_id: 'lightning',
+          address: address.trim(),
+          amount_sats: sats,
+        }),
       });
       await refresh();
       setAddress('');
-      setAmount('');
+      setAmountSatsStr('');
       notify(
-        'Withdrawal requested',
-        'Your withdrawal is being processed. You can track it in the transaction history.'
+        'Withdrawal sent',
+        `${fmtSats(sats)} on its way via Lightning. Fee charged: ${fmtSats(fee)}.`
       );
     } catch (e: any) {
       notify('Withdrawal failed', e?.message ?? 'Please try again.');
@@ -86,18 +125,18 @@ export default function Wallet() {
           refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.primary} />}
         >
           <Text style={styles.title}>Withdraw</Text>
-          <Text style={styles.subtitle}>Send your earnings to your wallet</Text>
+          <Text style={styles.subtitle}>Lightning only · instant payout</Text>
 
           <View style={styles.balanceCard}>
             <Text style={styles.balanceLabel}>AVAILABLE BALANCE</Text>
-            <Text style={styles.balanceAmount} testID="wallet-balance-usd">
-              {fmtUsd(user?.balance_usd ?? 0)}
+            <Text style={styles.balanceAmount} testID="wallet-balance-sats">
+              {fmtSats(balanceSats)}
             </Text>
-            <Text style={styles.balanceBtc}>₿ {(user?.balance_btc ?? 0).toFixed(8)}</Text>
+            <Text style={styles.balanceBtc}>₿ {(user?.balance_btc ?? 0).toFixed(8)} · ≈ ${(user?.balance_usd ?? 0).toFixed(2)}</Text>
             <View style={styles.limitRow}>
               <Ionicons name="information-circle-outline" size={14} color={colors.textTertiary} />
               <Text style={styles.limitText}>
-                Min {fmtUsd(minUsd)} · 24h cap {fmtUsd(maxDaily)}
+                {fmtSats(minSats)} min · {fmtSats(maxSats)} max · fee {(feePct * 100).toFixed(1)}% + {feeFlat} sat
               </Text>
             </View>
           </View>
@@ -105,79 +144,97 @@ export default function Wallet() {
           <Text style={styles.sectionLabel}>METHOD</Text>
           <View style={styles.methods}>
             {methods.map((m) => (
-              <TouchableOpacity
+              <View
                 key={m.id}
                 testID={`withdraw-method-${m.id}`}
-                style={[styles.methodRow, selected === m.id && styles.methodRowOn]}
-                activeOpacity={0.8}
-                onPress={() => setSelected(m.id)}
+                style={[styles.methodRow, styles.methodRowOn]}
               >
-                <View
-                  style={[
-                    styles.methodIcon,
-                    selected === m.id && { backgroundColor: colors.primaryDim },
-                  ]}
-                >
+                <View style={[styles.methodIcon, { backgroundColor: colors.primaryDim }]}>
                   <Ionicons name={m.icon as any} size={20} color={colors.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.methodName}>{m.name}</Text>
                   <Text style={styles.methodSub}>{m.subtitle}</Text>
                 </View>
-                <View style={[styles.radio, selected === m.id && styles.radioOn]}>
-                  {selected === m.id && <View style={styles.radioInner} />}
-                </View>
-              </TouchableOpacity>
+                <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+              </View>
             ))}
           </View>
 
-          <Text style={styles.sectionLabel}>DESTINATION</Text>
+          <Text style={styles.sectionLabel}>LIGHTNING DESTINATION</Text>
           <View style={styles.inputWrap}>
-            <Ionicons name="location-outline" size={18} color={colors.textTertiary} />
+            <Ionicons name="flash" size={18} color={colors.textTertiary} />
             <TextInput
               testID="wallet-address-input"
-              placeholder="Address, invoice or $cashtag"
+              placeholder="lnbc1… invoice or you@wallet.com"
               placeholderTextColor={colors.textTertiary}
               autoCapitalize="none"
               autoCorrect={false}
               value={address}
               onChangeText={setAddress}
               style={styles.input}
+              multiline={address.length > 60}
             />
           </View>
+          {detected ? (
+            <Text style={[styles.detected, detected.startsWith('Unknown') && { color: colors.danger }]}>
+              {detected}
+            </Text>
+          ) : null}
 
-          <Text style={styles.sectionLabel}>AMOUNT (USD)</Text>
+          <Text style={styles.sectionLabel}>AMOUNT (SATS)</Text>
           <View style={styles.inputWrap}>
-            <Text style={{ color: colors.textTertiary, fontSize: 16, fontWeight: '600' }}>$</Text>
+            <Text style={{ color: colors.textTertiary, fontSize: 13, fontWeight: '700', letterSpacing: 1 }}>SAT</Text>
             <TextInput
               testID="wallet-amount-input"
-              placeholder={`${minUsd.toFixed(2)} - ${maxDaily.toFixed(2)}`}
+              placeholder={`${minSats} - ${maxSats}`}
               placeholderTextColor={colors.textTertiary}
-              keyboardType="decimal-pad"
-              value={amount}
-              onChangeText={setAmount}
+              keyboardType="number-pad"
+              value={amountSatsStr}
+              onChangeText={(t) => setAmountSatsStr(t.replace(/[^0-9]/g, ''))}
               style={[styles.input, { fontFamily: fonts.mono, fontSize: 18 }]}
             />
             <TouchableOpacity
               testID="wallet-max-btn"
-              onPress={() => setAmount(Math.max(0, Math.min(user?.balance_usd ?? 0, maxDaily)).toFixed(2))}
+              onPress={() => setAmountSatsStr(String(Math.max(0, Math.min(balanceSats - feeFlat - 1, maxSats))))}
               style={styles.maxBtn}
             >
               <Text style={styles.maxBtnText}>MAX</Text>
             </TouchableOpacity>
           </View>
 
+          {/* Fee breakdown */}
+          {sats > 0 ? (
+            <View style={styles.feeCard}>
+              <View style={styles.feeRow}>
+                <Text style={styles.feeLabel}>You send</Text>
+                <Text style={styles.feeValue}>{fmtSats(sats)}</Text>
+              </View>
+              <View style={styles.feeRow}>
+                <Text style={styles.feeLabel}>Network fee</Text>
+                <Text style={[styles.feeValue, { color: colors.warning }]}>+ {fmtSats(fee)}</Text>
+              </View>
+              <View style={[styles.feeRow, { borderTopWidth: 1, borderTopColor: colors.borderSoft, paddingTop: 10, marginTop: 4 }]}>
+                <Text style={[styles.feeLabel, { color: colors.text, fontWeight: '800' }]}>Total debited</Text>
+                <Text style={[styles.feeValue, { color: colors.text, fontWeight: '800' }]}>{fmtSats(total)}</Text>
+              </View>
+              <Text style={styles.feeUsd}>
+                ≈ ${usdValue.toFixed(4)} USD at ${btcUsd.toLocaleString()}/BTC
+              </Text>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             testID="wallet-submit-btn"
             style={[styles.primaryBtn, submitting && { opacity: 0.6 }]}
-            disabled={submitting}
+            disabled={submitting || sats <= 0 || !address.trim()}
             onPress={submit}
             activeOpacity={0.85}
           >
             {submitting ? (
               <ActivityIndicator color={colors.bg} />
             ) : (
-              <Text style={styles.primaryBtnText}>Request withdrawal</Text>
+              <Text style={styles.primaryBtnText}>Send Lightning payment</Text>
             )}
           </TouchableOpacity>
 
@@ -215,13 +272,13 @@ const styles = StyleSheet.create({
   balanceAmount: {
     color: colors.text,
     fontFamily: fonts.mono,
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '800',
     marginTop: 8,
-    letterSpacing: -1,
+    letterSpacing: -0.6,
   },
-  balanceBtc: { color: colors.primary, fontSize: 13, fontFamily: fonts.mono, fontWeight: '600', marginTop: 2 },
-  limitRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm },
+  balanceBtc: { color: colors.primary, fontSize: 12, fontFamily: fonts.mono, fontWeight: '600', marginTop: 2 },
+  limitRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm, flexWrap: 'wrap' },
   limitText: { color: colors.textTertiary, fontSize: 11 },
   sectionLabel: {
     color: colors.textSecondary,
@@ -253,17 +310,6 @@ const styles = StyleSheet.create({
   },
   methodName: { color: colors.text, fontSize: 14, fontWeight: '700' },
   methodSub: { color: colors.textSecondary, fontSize: 11 },
-  radio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: colors.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  radioOn: { borderColor: colors.primary },
-  radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -272,11 +318,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
-    height: 52,
+    minHeight: 52,
     gap: spacing.sm,
-    marginBottom: spacing.md,
+    marginBottom: 6,
   },
-  input: { flex: 1, color: colors.text, fontSize: 15, paddingVertical: 0 },
+  input: { flex: 1, color: colors.text, fontSize: 15, paddingVertical: 14 },
+  detected: { color: colors.textTertiary, fontSize: 11, marginBottom: spacing.md, marginLeft: 4 },
   maxBtn: {
     backgroundColor: colors.primaryDim,
     paddingHorizontal: 10,
@@ -284,6 +331,20 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   maxBtnText: { color: colors.primary, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  feeCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+    gap: 6,
+  },
+  feeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  feeLabel: { color: colors.textSecondary, fontSize: 13 },
+  feeValue: { color: colors.text, fontSize: 14, fontWeight: '700', fontFamily: fonts.mono },
+  feeUsd: { color: colors.textTertiary, fontSize: 11, marginTop: 4 },
   primaryBtn: {
     backgroundColor: colors.primary,
     height: 52,

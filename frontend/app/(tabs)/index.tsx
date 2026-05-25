@@ -44,6 +44,8 @@ export default function Home() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [liveBalance, setLiveBalance] = useState(0);
+  const [ticker, setTicker] = useState<string>('');
+  const [agents, setAgents] = useState<any[]>([]);
 
   const pulse = useRef(new Animated.Value(0)).current;
 
@@ -60,9 +62,17 @@ export default function Home() {
 
   const load = useCallback(async () => {
     try {
-      const d = await api('/dashboard');
-      setData(d);
-      setLiveBalance(d.user.balance_usd);
+      const [d, t, a] = await Promise.allSettled([
+        api('/dashboard'),
+        api('/ai/ticker'),
+        api('/ai/agents'),
+      ]);
+      if (d.status === 'fulfilled') {
+        setData(d.value);
+        setLiveBalance(d.value.user.balance_usd);
+      }
+      if (t.status === 'fulfilled') setTicker(t.value?.text || '');
+      if (a.status === 'fulfilled') setAgents(a.value?.agents || []);
     } catch (e) {
       // ignore
     }
@@ -199,6 +209,38 @@ export default function Home() {
           <Stat icon="trending-up" label="Daily projected" value={fmtUsd(data.daily_projected_usd)} />
           <Stat icon="time" label="Updated" value="Live" highlight />
         </View>
+
+        {/* AI market ticker */}
+        {ticker ? (
+          <View style={styles.tickerCard} testID="ai-ticker">
+            <Ionicons name="sparkles" size={14} color={colors.primary} />
+            <Text style={styles.tickerText} numberOfLines={2}>{ticker}</Text>
+          </View>
+        ) : null}
+
+        {/* AI Trading Agents */}
+        {agents.length > 0 ? (
+          <>
+            <Text style={styles.sectionTitle}>AI Trading Agents</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.lg }}>
+              {agents.map((a) => (
+                <View key={a.id} style={styles.agentCard} testID={`agent-${a.id}`}>
+                  <View style={styles.agentTop}>
+                    <View style={[styles.agentDot, { backgroundColor: a.signal_strength === 'high' ? colors.primary : a.signal_strength === 'medium' ? colors.warning : colors.textTertiary }]} />
+                    <Text style={styles.agentN}>{a.name}</Text>
+                  </View>
+                  <Text style={styles.agentS}>{a.strategy}</Text>
+                  <View style={styles.agentBottom}>
+                    <Text style={[styles.agentP, { color: a.daily_pct >= 0 ? colors.primary : colors.warning }]}>
+                      {a.daily_pct >= 0 ? '+' : ''}{(a.daily_pct * 100).toFixed(2)}%
+                    </Text>
+                    <Text style={styles.agentW}>{(a.win_rate * 100).toFixed(0)}% wr</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          </>
+        ) : null}
 
         {/* Quick Actions */}
         <Text style={styles.sectionTitle}>Quick actions</Text>
@@ -384,6 +426,35 @@ const styles = StyleSheet.create({
   },
   statLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '600' },
   statValue: { color: colors.text, fontSize: 16, fontWeight: '800', fontFamily: fonts.mono },
+  tickerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    marginBottom: spacing.md,
+  },
+  tickerText: { flex: 1, color: colors.textSecondary, fontSize: 12, lineHeight: 16 },
+  agentCard: {
+    width: 170,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    padding: spacing.md,
+    gap: 6,
+  },
+  agentTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  agentDot: { width: 8, height: 8, borderRadius: 4 },
+  agentN: { color: colors.text, fontSize: 14, fontWeight: '800', letterSpacing: -0.2 },
+  agentS: { color: colors.textSecondary, fontSize: 11 },
+  agentBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 4 },
+  agentP: { fontSize: 16, fontWeight: '800', fontFamily: fonts.mono },
+  agentW: { color: colors.textTertiary, fontSize: 10, fontFamily: fonts.mono },
   sectionTitle: {
     color: colors.text,
     fontSize: 18,

@@ -1,27 +1,29 @@
-HashCloud - Cloud Computing Performance Monitor
+Satoshi Cloud Miner — Bitcoin mining performance dashboard.
 
-Experience cloud computing performance monitoring made simple.
+Monitor your simulated cloud-mining cluster, track Lightning payouts, and
+watch AI Trading Agents optimise yield in real time. Built for hobbyists
+and operators who want a clean, dark, neon-accented control panel for
+their Bitcoin-side activity.
 
-HashCloud is a sleek, modern monitoring tool for cloud computing performance and rewards. No hardware, no setup, no technical headaches — just a beautiful dashboard that shows your cloud workloads in real time.
+WHAT'S INSIDE
+- Live cluster dashboard: hashrate, daily projection, lifetime earnings
+- AI Trading Agents card with daily P&L and win-rate per strategy
+- Daily AI market commentary ticker
+- Cloud mining plans across 10 tiers (starter to flagship farm)
+- Lightning-only withdrawals to any BOLT11 invoice or Lightning address
+- Auto daily check-in (server-side) and optional auto-reinvest
+- Referral program with shareable code
 
-KEY FEATURES
-- Cloud-Powered Operations: All calculations happen on remote servers. Your device is purely for monitoring and managing.
-- Customizable Power Packages: Pick a cloud computing power plan that matches your goals. Adjust at any time.
-- Live Updates: Watch performance and rewards stream in real time with a polished neon dashboard.
-- Try Before You Buy: Every new account gets a free 24-hour Welcome Miner to explore how rewards flow.
-- Multiple Payout Methods: Cash out via Lightning Network, Coinbase, ZBD, Speed Wallet, or Cash App, with clear minimums and 24-hour caps shown up front.
-- Daily Check-in & Streaks: Open the app daily and watch your bonus grow up to 7x.
-- Invite Friends: Share your unique referral code and earn for every signup.
+FOR OPERATORS
+- Admin operator console: revenue, paid-out, profit margin, fees collected
+- Per-user moderation: ban/unban, grant admin, credit/debit balance
+- Transaction inspector with status overrides and audit log
 
-WHY HASHCLOUD
-- Beginner-friendly: Designed for newcomers. No complex setup, no confusing jargon.
-- Crystal-clear costs: Every fee is shown upfront — no hidden surprises.
-- Secure by design: Industry-standard encryption protects your account and data.
-- Sleek dark UI: A modern neon-on-obsidian look with live animated metrics.
+PRIVACY & DISCLAIMER
+Satoshi Cloud Miner is a cloud computing performance simulator and
+monitoring tool. It is not a financial, investment, or trading platform.
+Outcomes depend on server status and operational conditions. Pricing
+reflects operational costs.
 
-COMPLIANCE & DISCLAIMER
-HashCloud is a cloud computing service and monitoring tool. It is not a financial, investment, brokerage, or trading platform. Outcomes depend on server status and operational conditions. Pricing may reflect operational costs such as server maintenance and electricity. Use of the app must comply with your local laws. This application is independently developed and is not affiliated with any external institution.
-
-Support: support@hashcloud.app
-Terms: https://hashcloud.app/terms
-Privacy: https://hashcloud.app/privacy
+Terms: https://satoshicloudminer.app/terms
+Privacy: https://satoshicloudminer.app/privacy

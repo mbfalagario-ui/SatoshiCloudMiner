@@ -1,15 +1,38 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, fonts, fmtUsd, fmtBtc } from '@/src/utils/theme';
 import { useSession } from '@/src/ctx';
 import { confirmDialog, notify } from '@/src/utils/dialog';
+import { api } from '@/src/utils/api';
 
 export default function Profile() {
   const router = useRouter();
-  const { user, signOut } = useSession();
+  const { user, signOut, refresh } = useSession();
+  const [autoCheckin, setAutoCheckin] = useState(true);
+  const [autoReinvest, setAutoReinvest] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api('/auto/settings');
+        setAutoCheckin(!!r.auto_checkin);
+        setAutoReinvest(!!r.auto_reinvest);
+      } catch {}
+    })();
+  }, []);
+
+  const toggle = async (k: 'auto_checkin' | 'auto_reinvest', v: boolean) => {
+    if (k === 'auto_checkin') setAutoCheckin(v); else setAutoReinvest(v);
+    try {
+      await api('/auto/settings', { method: 'POST', body: JSON.stringify({ [k]: v }) });
+      await refresh();
+    } catch (e: any) {
+      notify('Update failed', e?.message ?? 'Try again.');
+    }
+  };
 
   const items: { icon: any; label: string; to?: string; testID: string; onPress?: () => void }[] = [
     { icon: 'hardware-chip-outline', label: 'My miners', to: '/machines', testID: 'profile-miners' },
@@ -35,7 +58,7 @@ export default function Profile() {
       onPress: () =>
         notify(
           'Contact support',
-          'Reach us at support@hashcloud.app — we typically respond within 24 hours.'
+          'Reach us at support@satoshicloudminer.app — we typically respond within 24 hours.'
         ),
     },
   ];
@@ -93,6 +116,50 @@ export default function Profile() {
           ))}
         </View>
 
+        {/* Automation settings */}
+        <Text style={styles.sectionLabel}>AUTOMATION</Text>
+        <View style={styles.menu}>
+          <View style={[styles.menuRow]}>
+            <View style={styles.menuIcon}><Ionicons name="sync" size={18} color={colors.primary} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuLabel}>Auto daily check-in</Text>
+              <Text style={styles.menuSub}>Server claims streak rewards for you every 24h</Text>
+            </View>
+            <Switch
+              testID="toggle-auto-checkin"
+              value={autoCheckin}
+              onValueChange={(v) => toggle('auto_checkin', v)}
+              trackColor={{ false: colors.border, true: colors.primary }}
+            />
+          </View>
+          <View style={[styles.menuRow, { borderBottomWidth: 0 }]}>
+            <View style={styles.menuIcon}><Ionicons name="rocket" size={18} color={colors.primary} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuLabel}>Auto-reinvest yield</Text>
+              <Text style={styles.menuSub}>Buy the next tier automatically when balance hits the threshold</Text>
+            </View>
+            <Switch
+              testID="toggle-auto-reinvest"
+              value={autoReinvest}
+              onValueChange={(v) => toggle('auto_reinvest', v)}
+              trackColor={{ false: colors.border, true: colors.primary }}
+            />
+          </View>
+        </View>
+
+        {user?.is_admin ? (
+          <TouchableOpacity
+            testID="profile-admin-btn"
+            style={styles.adminBtn}
+            activeOpacity={0.85}
+            onPress={() => router.push('/admin')}
+          >
+            <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
+            <Text style={styles.adminBtnText}>Open Operator Console</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+          </TouchableOpacity>
+        ) : null}
+
         <TouchableOpacity
           testID="profile-logout-btn"
           style={styles.logoutBtn}
@@ -103,9 +170,9 @@ export default function Profile() {
           <Text style={styles.logoutText}>Sign out</Text>
         </TouchableOpacity>
 
-        <Text style={styles.appVersion}>HashCloud v1.0.0 (1)</Text>
+        <Text style={styles.appVersion}>Satoshi Cloud Miner v1.0.0 (1)</Text>
         <Text style={styles.disclaimer}>
-          HashCloud is a cloud computing simulation and monitoring tool. It is not a financial,
+          Satoshi Cloud Miner is a cloud computing simulation and monitoring tool. It is not a financial,
           investment, or trading platform. Outcomes depend on server status and operational
           conditions. Pricing reflects operational costs.
         </Text>
@@ -177,6 +244,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   menuLabel: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '600' },
+  menuSub: { color: colors.textTertiary, fontSize: 11, marginTop: 2 },
+  sectionLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 1.4, marginTop: spacing.lg, marginBottom: spacing.sm },
+  adminBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.primaryDim,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    marginTop: spacing.md,
+  },
+  adminBtnText: { flex: 1, color: colors.primary, fontWeight: '800', fontSize: 14 },
   logoutBtn: {
     flexDirection: 'row',
     backgroundColor: colors.dangerDim,

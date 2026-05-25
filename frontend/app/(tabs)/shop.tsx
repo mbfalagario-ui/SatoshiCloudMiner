@@ -98,8 +98,8 @@ export default function Shop() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Cloud Mining Power</Text>
-          <Text style={styles.subtitle}>Choose a hashpower package</Text>
+          <Text style={styles.title}>AI Mining Plans</Text>
+          <Text style={styles.subtitle}>Pick a plan · AI agents optimize your yield</Text>
         </View>
         <Image source={{ uri: media.serverRack }} style={styles.headerImg} />
       </View>
@@ -121,9 +121,11 @@ export default function Shop() {
           )
         }
         renderItem={({ item }) => {
-          const totalDays = item.duration_days;
-          const totalReturn = item.daily_yield_usd * totalDays;
-          const profitable = totalReturn > item.price_usd;
+          const totalReturn = item.total_return_usd ?? item.daily_yield_usd * item.duration_days;
+          const profitable = item.profitable ?? totalReturn > item.price_usd;
+          const roi = item.roi_pct ?? ((totalReturn - item.price_usd) / item.price_usd) * 100;
+          const breakEven = item.break_even_days ?? item.price_usd / Math.max(item.daily_yield_usd, 0.0001);
+          const stars = Math.max(0, Math.min(5, Math.round((item.profitability_score ?? 0))));
           return (
             <View
               testID={`pkg-${item.id}`}
@@ -159,6 +161,12 @@ export default function Shop() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.pkgName}>{item.name}</Text>
                   <Text style={styles.pkgTag}>{item.tagline}</Text>
+                  {item.ai_optimized ? (
+                    <View style={styles.aiChip}>
+                      <Ionicons name="sparkles" size={11} color={colors.primary} />
+                      <Text style={styles.aiChipText}>AI-OPTIMIZED YIELD</Text>
+                    </View>
+                  ) : null}
                 </View>
                 <View style={styles.priceWrap}>
                   <Text style={styles.priceUsd}>{fmtUsd(item.price_usd)}</Text>
@@ -171,13 +179,47 @@ export default function Shop() {
                 <Spec label="Daily yield" value={fmtUsd(item.daily_yield_usd)} />
               </View>
 
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryText}>
-                  Total estimated return:{' '}
-                  <Text style={{ color: profitable ? colors.primary : colors.text, fontWeight: '700' }}>
-                    {fmtUsd(totalReturn)}
+              {/* AI Profitability projection */}
+              <View style={styles.profitCard}>
+                <View style={styles.profitRow}>
+                  <Text style={styles.profitLabel}>AI ROI projection</Text>
+                  <Text style={[styles.profitValue, { color: profitable ? colors.primary : colors.warning }]}>
+                    {roi >= 0 ? '+' : ''}{roi.toFixed(1)}%
                   </Text>
-                </Text>
+                </View>
+                <View style={styles.profitRow}>
+                  <Text style={styles.profitLabel}>Total est. return</Text>
+                  <Text style={styles.profitValue}>{fmtUsd(totalReturn)}</Text>
+                </View>
+                <View style={styles.profitRow}>
+                  <Text style={styles.profitLabel}>Break-even</Text>
+                  <Text style={styles.profitValue}>{breakEven.toFixed(1)} days</Text>
+                </View>
+                <View style={styles.profitRow}>
+                  <Text style={styles.profitLabel}>Profitability score</Text>
+                  <View style={styles.stars}>
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <Ionicons
+                        key={i}
+                        name={i < stars ? 'star' : 'star-outline'}
+                        size={12}
+                        color={i < stars ? colors.primary : colors.textTertiary}
+                      />
+                    ))}
+                  </View>
+                </View>
+                {/* Profitability bar */}
+                <View style={styles.barTrack}>
+                  <View
+                    style={[
+                      styles.barFill,
+                      {
+                        width: `${Math.min(100, Math.max(8, ((item.profitability_score ?? 0) / 5) * 100))}%`,
+                        backgroundColor: profitable ? colors.primary : colors.warning,
+                      },
+                    ]}
+                  />
+                </View>
               </View>
 
               <TouchableOpacity
@@ -270,6 +312,39 @@ const styles = StyleSheet.create({
   specValue: { color: colors.text, fontSize: 14, fontWeight: '700', marginTop: 2, fontFamily: fonts.mono },
   summaryRow: { marginBottom: spacing.md },
   summaryText: { color: colors.textSecondary, fontSize: 12 },
+  aiChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primaryDim,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+  },
+  aiChipText: { color: colors.primary, fontSize: 9, fontWeight: '800', letterSpacing: 0.8 },
+  profitCard: {
+    backgroundColor: colors.bg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: 6,
+  },
+  profitRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  profitLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
+  profitValue: { color: colors.text, fontSize: 13, fontWeight: '800', fontFamily: fonts.mono },
+  stars: { flexDirection: 'row', gap: 1 },
+  barTrack: {
+    height: 4,
+    backgroundColor: colors.borderSoft,
+    borderRadius: 2,
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  barFill: { height: '100%', borderRadius: 2 },
   buyBtn: {
     flexDirection: 'row',
     backgroundColor: colors.primary,

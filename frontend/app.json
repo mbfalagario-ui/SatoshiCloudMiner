@@ -1,25 +1,25 @@
 {
   "expo": {
-    "name": "HashCloud",
-    "slug": "hashcloud",
+    "name": "Satoshi Cloud Miner",
+    "slug": "satoshi-cloud-miner",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "hashcloud",
+    "scheme": "satoshicloudminer",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
-    "description": "HashCloud — cloud computing performance monitoring and management. Track simulated hashpower, manage virtual computing packages, and review your activity in a polished dark interface.",
+    "description": "Satoshi Cloud Miner — Bitcoin cloud-mining performance dashboard with AI yield agents and Lightning payouts.",
     "primaryColor": "#00FFA3",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.hashcloud.mobile",
+      "bundleIdentifier": "app.satoshicloudminer",
       "buildNumber": "1",
       "config": {
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSUserTrackingUsageDescription": "Allow HashCloud to use your identifier to improve relevance of ads we show."
+        "NSUserTrackingUsageDescription": "Allow Satoshi Cloud Miner to improve relevance of in-app messages."
       }
     },
     "android": {
@@ -27,7 +27,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0B0E14"
       },
-      "package": "app.hashcloud.mobile",
+      "package": "app.satoshicloudminer",
       "versionCode": 1,
       "edgeToEdgeEnabled": true
     },

@@ -1,7 +1,10 @@
-HashCloud 1.0 — Initial release.
-- Polished neon dark dashboard
-- Live hashpower & earnings ticker
-- 10 cloud power packages with BOGO welcome miner
-- Withdrawals via Lightning, on-chain BTC, and Cash App
-- 7-day daily check-in streak with up to 7x bonus
-- Referral program: earn for every friend you bring in
+Satoshi Cloud Miner 1.0 — initial release
+
+- Real-time mining cluster dashboard with hashrate and live earnings
+- AI Trading Agents: 6 simulated strategies with daily P&L and win-rate
+- AI market commentary ticker refreshed daily
+- 10 mining plan tiers with AI-projected ROI and break-even days
+- Lightning-only withdrawals via BOLT11 or Lightning address
+- Server-side auto check-in and auto-reinvest (optional)
+- Operator Console: revenue, payouts, user moderation, transaction audit
+- Referral program with shareable code
