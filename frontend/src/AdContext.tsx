@@ -21,6 +21,10 @@ export function AdProvider({ children }: { children: React.ReactNode }) {
 
   const showInterstitial = useCallback(async (_reason?: string) => {
     if (adFree) return;
+    // Allow tests / screenshot capture to disable ads via a localStorage flag.
+    try {
+      if (typeof window !== 'undefined' && window.localStorage?.getItem('scm_no_ads') === '1') return;
+    } catch {}
     const now = Date.now();
     if (now - lastShownRef.current < MIN_INTERSTITIAL_GAP_MS) return;
     lastShownRef.current = now;

@@ -58,9 +58,9 @@ async def login(page, base, email, password):
     auth_payload = {"email": email, "password": password, "api_base": api_base}
     js = """
     async ({email, password, api_base}) => {
-      const post = (path, body) => fetch(api_base + '/api' + path, {
+      const post = (path, body, token) => fetch(api_base + '/api' + path, {
         method: 'POST',
-        headers: {'Content-Type':'application/json'},
+        headers: Object.assign({'Content-Type':'application/json'}, token ? {Authorization: 'Bearer ' + token} : {}),
         body: JSON.stringify(body),
       }).then(async r => ({ok:r.ok, status:r.status, data: await r.json().catch(()=>({}))}));
 
@@ -73,6 +73,8 @@ async def login(page, base, email, password):
       // Persist the JWT exactly where the @react-native-async-storage web
       // adapter looks for it: window.localStorage. Values are JSON-encoded.
       window.localStorage.setItem('hc_access_token', JSON.stringify(token));
+      // Disable interstitial ads during screenshot capture.
+      window.localStorage.setItem('scm_no_ads', '1');
       return {ok:true};
     }
     """
@@ -93,9 +95,6 @@ async def login(page, base, email, password):
             timeout=15000,
         )
     except Exception:
-        # If tab bar never appears, the redirect from / → /(tabs) didn't fire.
-        # Tap the "Get Started" CTA on the onboarding screen to push to sign-up
-        # — but only as a last resort.
         print("  Tab bar didn't render after auth; aborting.")
         return False
     await page.wait_for_timeout(1500)
@@ -142,10 +141,9 @@ async def capture_device(p, base, device_name, dims, email, password):
     ]
     for icon, route, suffix in tab_routes:
         try:
-            # Tab buttons render as <a href="/shop"> elements on react-native-web.
             link = page.locator(f'a[href$="{route}"]').first
             await link.scroll_into_view_if_needed(timeout=2000)
-            await link.click(timeout=5000)
+            await link.click(timeout=5000, force=True)
             await page.wait_for_timeout(1500)
         except Exception as e:
             print(f"  tab click {route} failed: {e}")
