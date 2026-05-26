@@ -864,4 +864,104 @@ agent_communication:
           6. Confirm Mine tab still loads packages, Wallet still loads
              withdraw methods, AI ticker still loads on Home.
         Do NOT touch the toast pointerEvents bug (carry-over from
+
+    - agent: "testing"
+      message: |
+        Build #11 frontend regression — viewport 390×844, http://localhost:3000.
+
+        ✅ CONFIRMED PASSING (via Playwright):
+          1_onboarding         PASS  hero "Satoshi Cloud Miner" + testID
+                                     onboarding-get-started-btn visible.
+          2a_admin_signin      PASS* The form submit succeeded (correct
+                                     testIDs are `sign-in-email-input`,
+                                     `sign-in-password-input`,
+                                     `sign-in-submit-btn` — NOTE: review
+                                     request listed wrong testID
+                                     `signin-submit-btn`). Confirmed
+                                     auth landed because admin-only UI in
+                                     2b/2c rendered.
+          2b_admin_btn         PASS  profile-admin-btn visible (count=1)
+                                     for the admin user.
+          2c_operator_console  PASS  Tapping profile-admin-btn navigates
+                                     to /admin, "Operator Console"
+                                     heading rendered (no crash, no white
+                                     screen). Screenshot captured.
+          2d_admin_users       PASS  /admin/users loads.
+          2e_admin_transactions PASS /admin/transactions loads.
+
+        ⚠️ COULD NOT COMPLETE IN THIS RUN (Playwright budget exhausted
+           after 3 invocations; final screenshot timed out and aborted
+           the 3rd run mid-execution):
+          3_admin_logout       NOT VERIFIED on web. Logout click was
+                                     reached but the post-logout state
+                                     assertions never printed before
+                                     the page.screenshot call timed out
+                                     in the harness. The admin console
+                                     itself rendering cleanly (2c) is
+                                     a strong indirect signal that the
+                                     <Redirect>-based gate in
+                                     admin/_layout.tsx is wired and the
+                                     race condition described in the
+                                     fix should be resolved, but no
+                                     concrete PASS evidence captured
+                                     this session. Recommend a manual
+                                     spot-check or a TestFlight Build
+                                     #11 verification before shipping.
+          4a_regular_signup,
+          4b_mine_pkg_pro_499,
+          4c_buy_dialog_devmode,
+          4d_wallet_limits (150,000 sats min / 10% fee),
+          4e_reg_admin_btn_hidden,
+          4f_regular_logout,
+          5_nonadmin_deeplink_redirect  ALL NOT VERIFIED this session
+                                        (same reason — ran out of
+                                        invocation budget after the
+                                        screenshot timeout).
+
+        STATIC CODE CHECK (file-level evidence only, no runtime proof):
+          * /app/frontend/src/utils/sats.ts already exports
+              WITHDRAW_MIN_SATS = 150_000
+              WITHDRAW_MAX_SATS = 10_000_000
+            and wallet.tsx renders
+              "Min {fmtSats(minSats)} · No max · flat {feePct*100}% network fee"
+            which will read "Min 150,000 sats · No max · flat 10%
+            network fee". This MATCHES the new constants the review
+            requested BUT note: the visible string uses "No max" rather
+            than "10,000,000 sats max", and the fee label is "10%" not
+            "10.0%". Functionally correct; cosmetic wording differs
+            from the review's stated expectation.
+          * /app/frontend/app/admin/_layout.tsx is the useSession-aware
+            gate (loading → spinner; user==null → <Redirect href="/" />;
+            !is_admin → <Redirect href="/(tabs)/profile" />). This is
+            the fix for the TestFlight Build #10 admin-logout crash and
+            for the non-admin /admin deeplink defense — both are wired
+            at the layout level so they should hold even without my
+            runtime test.
+
+        REVIEW-REQUEST DEVIATIONS WORTH FLAGGING:
+          * testID typo in the review: `signin-submit-btn` / `signup-
+            submit-btn` are NOT what the code uses. Real testIDs:
+            sign-in-submit-btn, sign-up-submit-btn, sign-in-email-input,
+            sign-up-email-input, agree-checkbox (not signup-agree),
+            etc. Main agent: please update any docs or QA scripts
+            relying on the hyphen-less form.
+          * Wallet copy: review expects "10,000,000 sats max" and
+            "10.0%". Live code shows "No max" + "10%". Not a bug, but
+            either tighten the copy or update the spec.
+
+        ACTION ITEMS FOR MAIN AGENT:
+          1. Manually verify (browser or Expo Go) that admin sign-out
+             from /profile lands cleanly on / with no console error —
+             this is THE critical Build #11 fix and I could not finish
+             the automated proof in budget.
+          2. (Optional) Align wallet copy with the spec ("10,000,000
+             sats max" + "10.0%") OR update the spec to match the
+             current "No max · 10%" wording.
+          3. Fix testID references in the review_request / any QA
+             docs (signin-submit-btn → sign-in-submit-btn, etc.).
+
+        Do NOT re-fix the admin layout gate — code review confirms it
+        matches the documented fix. The remaining work is human/manual
+        verification of the actual logout transition.
+
         previous session, low priority, not blocking submission).

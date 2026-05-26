@@ -788,12 +788,12 @@ async def withdraw(
     if amount_sats < MIN_WITHDRAW_SATS:
         raise HTTPException(
             status_code=400,
-            detail=f"Minimum withdrawal is {MIN_WITHDRAW_SATS} sats (0.00000020 BTC)",
+            detail=f"Minimum withdrawal is {MIN_WITHDRAW_SATS:,} sats ({MIN_WITHDRAW_SATS / SATS_PER_BTC:.8f} BTC)",
         )
     if amount_sats > MAX_WITHDRAW_SATS:
         raise HTTPException(
             status_code=400,
-            detail=f"Maximum withdrawal is {MAX_WITHDRAW_SATS} sats (0.00002500 BTC)",
+            detail=f"Maximum withdrawal is {MAX_WITHDRAW_SATS:,} sats ({MAX_WITHDRAW_SATS / SATS_PER_BTC:.8f} BTC)",
         )
 
     fee_sats = withdrawal_fee_sats(amount_sats)
