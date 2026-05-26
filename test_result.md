@@ -570,15 +570,15 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "2.2"
-  test_sequence: 4
+  version: "2.3"
+  test_sequence: 5
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Build #12 — native logout crash fully mitigated (effect-driven redirect)"
-    - "Home tab focus-refresh after Mine purchase"
-    - "Purchase success message branching (ad-free vs miners)"
+    - "Build #13 — Free Forever 24h plan"
+    - "Build #13 — Admin AI controls + Fees reinvest"
+    - "Build #13 — Logout black-screen fix"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

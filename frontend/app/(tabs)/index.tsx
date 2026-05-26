@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSession } from '@/src/ctx';
 import { api } from '@/src/utils/api';
 import { colors, spacing, radius, fonts, media, shadows, fmtUsd, fmtBtc, fmtHash } from '@/src/utils/theme';
+import FreeForeverCard from '@/src/components/FreeForeverCard';
 
 type Machine = {
   id: string;
@@ -177,6 +178,9 @@ export default function Home() {
             </View>
           </View>
         </LinearGradient>
+
+        {/* Free Forever — complimentary 24h plan (Build #13) */}
+        <FreeForeverCard onActivated={() => { load(); refresh(); }} />
 
         {/* Active Mining Card */}
         <View style={styles.miningCard}>

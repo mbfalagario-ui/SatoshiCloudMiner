@@ -13,20 +13,17 @@ export default function TabsLayout() {
   const router = useRouter();
   const lastTabRef = useRef<string>('index');
 
-  // CRITICAL: Defer the unauthenticated-redirect to an effect (post-commit)
-  // instead of returning <Redirect /> mid-render. The old render-time
-  // <Redirect> caused a native iOS crash on sign-out because expo-router
-  // synchronously mutated the navigation stack while iOS was still
-  // committing the Tabs/Profile UIViewControllers and a Modal could be
-  // animating. By moving navigation into useEffect we run AFTER iOS has
-  // committed its tree, so the stack mutation is safe.
+  // signOut() in ctx.tsx now navigates to /sign-in BEFORE clearing user state,
+  // so by the time we observe `user === null` here, expo-router has already
+  // unmounted the (tabs) tree. This effect is only a defensive safety net
+  // for session-expiry edge cases (e.g. a 401 from /auth/me marks user=null
+  // while we're still mounted) — we redirect to /sign-in from a microtask
+  // post-commit, never during render.
   useEffect(() => {
     if (!loading && !user) {
-      // microtask deferral on top of useEffect — empirically this avoids
-      // the rare second-tap crash on the Sign Out alert dismiss.
       const t = setTimeout(() => {
         try {
-          router.replace('/');
+          router.replace('/sign-in');
         } catch {
           // navigation can throw if the layout already unmounted — safe to ignore.
         }

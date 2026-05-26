@@ -8,13 +8,14 @@ export default function AdminLayout() {
   const { user, loading } = useSession();
   const router = useRouter();
 
-  // CRITICAL — same iOS-native crash mitigation as (tabs)/_layout: defer the
-  // unauthenticated-redirect to an effect (post-commit) so we don't mutate
-  // the navigation stack during render of an already-committing Stack.
+  // signOut() in ctx.tsx now navigates BEFORE clearing user state, so by the
+  // time we observe `user === null` here, the (admin) tree has already been
+  // popped. This effect is a defensive safety net for session-expiry edge
+  // cases — runs post-commit via setTimeout(0), never during render.
   useEffect(() => {
     if (loading) return;
     if (!user) {
-      const t = setTimeout(() => { try { router.replace('/'); } catch {} }, 0);
+      const t = setTimeout(() => { try { router.replace('/sign-in'); } catch {} }, 0);
       return () => clearTimeout(t);
     }
     if (!user.is_admin) {

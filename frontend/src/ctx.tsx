@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { InteractionManager } from 'react-native';
+import { router } from 'expo-router';
 import { api, saveToken, clearToken, getToken } from '@/src/utils/api';
 
 export type UserPublic = {
@@ -79,47 +79,56 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    // CRITICAL — iOS native crash mitigation (Build #11 TestFlight regression):
+    // CRITICAL — Build #13 logout flow.
     //
-    // The previous "clear token → setUser(null) → <Redirect> during render"
-    // pattern triggered a native crash on TestFlight because:
-    //   1. clearToken() is an async native call (expo-secure-store).
-    //   2. When setUser(null) commits, the (tabs) layout re-renders and
-    //      synchronously returns <Redirect href="/" />.
-    //   3. <Redirect> from expo-router internally calls router.replace
-    //      during render — while the Profile screen + AdInterstitial Modal
-    //      + Tabs UIViewControllers are still resolving their own commit.
-    //   4. iOS UINavigationController gets a stack mutation mid-commit and
-    //      hits an internal assertion → CRASH.
+    // Build #11 crashed natively on iOS because <Redirect> was rendered while
+    // tabs/admin UIViewControllers were still committing.
     //
-    // Fix: tear down listeners first, defer state clear so the navigation
-    // transition starts BEFORE the React tree unmounts. The (tabs)/_layout
-    // now uses a useEffect-driven redirect (not <Redirect>), and we wait
-    // one frame using InteractionManager so animations finish.
+    // Build #12 fixed the crash by deferring `setUser(null)` AND moving the
+    // redirect into a layout-side useEffect — but on TestFlight the user
+    // reported a black screen that never redirected. The layout's useEffect
+    // does fire, but inside an about-to-unmount layout the queued
+    // `router.replace` call from `setTimeout(0)` was getting cancelled when
+    // expo-router cleaned up the (tabs) navigator.
+    //
+    // The robust fix is to navigate IMMEDIATELY from here, BEFORE clearing
+    // any session state. expo-router exposes a top-level `router` singleton
+    // that does not depend on the layout being mounted. We jump to /sign-in
+    // first so the auth screen tree mounts, THEN we tear down the user
+    // session in the background. (tabs)/_layout never sees user=null because
+    // by the time setUser(null) commits, the (tabs) tree has already been
+    // popped by the navigation.
+    try {
+      router.replace('/sign-in');
+    } catch {
+      // imperative router can throw if called pre-mount — safe to ignore.
+    }
+
+    // Tear down react-native-iap listeners so they don't fire callbacks into
+    // an unmounted shop screen after we navigate away.
     try {
       const iapMod = await import('@/src/utils/iap');
       if (typeof iapMod.shutdownIap === 'function') {
         await iapMod.shutdownIap();
       }
     } catch {
-      // non-fatal — iap module may not be loaded on every platform
+      // iap module may not be loaded on every platform
     }
 
-    // Clear the stored token first so no further API calls succeed.
+    // Clear the SecureStore token. From this point any /api/* call will 401.
     try {
       await clearToken();
     } catch {
       // SecureStore can throw if the key was already removed.
     }
 
-    // Defer the state clear to the next frame so any in-flight animations
-    // (button press feedback, alert dismiss) can complete first.
-    await new Promise<void>((resolve) => {
-      InteractionManager.runAfterInteractions(() => {
-        setUser(null);
-        resolve();
-      });
-    });
+    // Now that the auth screen is on top of the navigation stack, it's safe
+    // to clear the user state. A tiny defer keeps it off the same tick as
+    // the imperative router.replace so React Native iOS schedules them as
+    // separate commits.
+    setTimeout(() => {
+      setUser(null);
+    }, 16);
   };
 
   return (

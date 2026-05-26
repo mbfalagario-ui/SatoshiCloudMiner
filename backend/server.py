@@ -292,6 +292,33 @@ class AutoSettingsUpdate(BaseModel):
     auto_reinvest_min_balance_usd: Optional[float] = Field(default=None, ge=0)
 
 
+# Free Forever — the once-per-24h complimentary mining plan added in
+# Build #13. Hashpower expressed as a tiny TH/s fraction so the dashboard
+# math (which is in TH/s everywhere else) keeps working without changes.
+FREE_FOREVER_HASH_RATE_TH = 0.5            # = 500 GH/s
+FREE_FOREVER_DAILY_YIELD_USD = 0.02        # tiny "thank you" yield
+FREE_FOREVER_DURATION_HOURS = 24
+FREE_FOREVER_COOLDOWN_HOURS = 24
+
+
+class AdminAIAgentPatch(BaseModel):
+    """Allow an operator to nudge a single AI Trading Agent for the current
+    day's snapshot. Build #13 admin console enhancement."""
+    daily_pct: Optional[float] = None
+    win_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    signal_strength: Optional[str] = None   # 'high' | 'medium' | 'low'
+    strategy: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+class AdminFeesReinvestRequest(BaseModel):
+    """Reinvest the unredeemed withdrawal-commission fees collected to-date
+    by attributing them to a target user's balance (default: the operator
+    themselves). Build #13 admin console enhancement."""
+    target_user_id: Optional[str] = None    # default = current admin
+    note: Optional[str] = None
+
+
 # ---------------------------- Helpers ----------------------------
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -1061,6 +1088,107 @@ async def set_auto_settings(
     return await get_auto_settings(current_user={**current_user, **upd})
 
 
+# ---------------------------- Routes: Free Forever ----------------------------
+# Build #13 — a complimentary 24h mining plan for every user. They can
+# re-activate it every 24 hours; in between activations the "next available"
+# countdown is what the Home screen renders.
+def _free_forever_state(user: Dict[str, Any]) -> Dict[str, Any]:
+    last_iso = user.get("free_forever_last_activated_at")
+    now = now_utc()
+    if not last_iso:
+        return {
+            "active": False,
+            "expires_at": None,
+            "next_available_at": now.isoformat(),
+            "hash_rate_th": FREE_FOREVER_HASH_RATE_TH,
+            "hash_rate_display": "500 GH/s",
+            "duration_hours": FREE_FOREVER_DURATION_HOURS,
+            "daily_yield_usd": FREE_FOREVER_DAILY_YIELD_USD,
+        }
+    try:
+        last = datetime.fromisoformat(last_iso)
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+    except Exception:
+        last = now - timedelta(days=2)  # treat malformed as expired
+    expires = last + timedelta(hours=FREE_FOREVER_DURATION_HOURS)
+    next_available = last + timedelta(hours=FREE_FOREVER_COOLDOWN_HOURS)
+    return {
+        "active": now < expires,
+        "expires_at": expires.isoformat() if now < expires else None,
+        "next_available_at": (now if now >= next_available else next_available).isoformat(),
+        "hash_rate_th": FREE_FOREVER_HASH_RATE_TH,
+        "hash_rate_display": "500 GH/s",
+        "duration_hours": FREE_FOREVER_DURATION_HOURS,
+        "daily_yield_usd": FREE_FOREVER_DAILY_YIELD_USD,
+    }
+
+
+@api.get("/free-forever/status")
+async def free_forever_status(current_user: Dict[str, Any] = Depends(get_current_user)):
+    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
+    return _free_forever_state(user or current_user)
+
+
+@api.post("/free-forever/activate")
+async def free_forever_activate(current_user: Dict[str, Any] = Depends(get_current_user)):
+    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
+    state = _free_forever_state(user or current_user)
+
+    if state["active"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Free Forever is already active. Wait for the current 24h cycle to finish before activating again.",
+        )
+
+    now = now_utc()
+    # Cooldown check — should always pass when active==False with our equal
+    # 24h duration + cooldown, but kept for safety in case durations diverge.
+    next_avail_iso = state.get("next_available_at")
+    if next_avail_iso:
+        try:
+            next_avail = datetime.fromisoformat(next_avail_iso)
+            if next_avail.tzinfo is None:
+                next_avail = next_avail.replace(tzinfo=timezone.utc)
+            if now < next_avail:
+                wait_seconds = int((next_avail - now).total_seconds())
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Free Forever will be available again in {wait_seconds // 3600}h {(wait_seconds % 3600) // 60}m.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    # Mint the 24h miner and bump the user's activation timestamp.
+    machine = {
+        "id": str(uuid.uuid4()),
+        "user_id": current_user["id"],
+        "package_id": "free_forever",
+        "name": "Free Forever",
+        "hash_rate": FREE_FOREVER_HASH_RATE_TH,
+        "daily_yield_usd": FREE_FOREVER_DAILY_YIELD_USD,
+        "duration_days": FREE_FOREVER_DURATION_HOURS / 24.0,
+        "purchased_at": now.isoformat(),
+        "expires_at": (now + timedelta(hours=FREE_FOREVER_DURATION_HOURS)).isoformat(),
+        "status": "active",
+    }
+    await db.machines.insert_one(machine)
+    await db.users.update_one(
+        {"id": current_user["id"]},
+        {"$set": {"free_forever_last_activated_at": now.isoformat()}},
+    )
+
+    # Refresh user snapshot for the response.
+    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
+    return {
+        "ok": True,
+        "machine_id": machine["id"],
+        "status": _free_forever_state(user or current_user),
+    }
+
+
 # ---------------------------- Routes: Admin ----------------------------
 @api.get("/admin/analytics")
 async def admin_analytics(current_admin: Dict[str, Any] = Depends(get_current_admin)):
@@ -1228,6 +1356,201 @@ async def admin_audit(
 ):
     items = await db.admin_audit.find({}, {"_id": 0}).sort("created_at", -1).to_list(limit)
     return {"audit": items}
+
+
+# ---------------------------- Routes: Admin — AI controls (Build #13) ----------------------------
+@api.get("/admin/ai/agents")
+async def admin_ai_agents(current_admin: Dict[str, Any] = Depends(get_current_admin)):
+    """Return today's stored AI agent snapshot for operator editing."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    snap = await db.ai_snapshots.find_one({"date": today}, {"_id": 0})
+    if not snap:
+        agents = ai_mod.snapshot_agents()
+        snap = {"date": today, "agents": agents, "created_at": now_utc().isoformat()}
+        try:
+            await db.ai_snapshots.update_one({"date": today}, {"$set": snap}, upsert=True)
+        except Exception:
+            pass
+    return snap
+
+
+@api.patch("/admin/ai/agents/{agent_id}")
+async def admin_patch_ai_agent(
+    agent_id: str,
+    payload: AdminAIAgentPatch,
+    current_admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    """Patch a single agent inside today's snapshot. Used by the operator
+    console to nudge daily_pct / win_rate / signal_strength on the fly."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    snap = await db.ai_snapshots.find_one({"date": today})
+    if not snap:
+        raise HTTPException(status_code=404, detail="No AI snapshot for today yet — regenerate first.")
+
+    agents = list(snap.get("agents", []))
+    idx = next((i for i, a in enumerate(agents) if a.get("id") == agent_id), -1)
+    if idx < 0:
+        raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found in today's snapshot.")
+
+    agent = dict(agents[idx])
+    if payload.daily_pct is not None:
+        agent["daily_pct"] = float(payload.daily_pct)
+    if payload.win_rate is not None:
+        agent["win_rate"] = float(payload.win_rate)
+    if payload.signal_strength is not None:
+        if payload.signal_strength not in ("high", "medium", "low"):
+            raise HTTPException(400, "signal_strength must be one of: high, medium, low")
+        agent["signal_strength"] = payload.signal_strength
+    if payload.strategy is not None:
+        agent["strategy"] = payload.strategy.strip() or agent.get("strategy", "")
+    if payload.enabled is not None:
+        agent["enabled"] = bool(payload.enabled)
+    agents[idx] = agent
+
+    await db.ai_snapshots.update_one(
+        {"date": today},
+        {"$set": {"agents": agents, "last_admin_edit_at": now_utc().isoformat()}},
+    )
+    await db.admin_audit.insert_one({
+        "id": str(uuid.uuid4()),
+        "admin_id": current_admin["id"],
+        "admin_email": current_admin["email"],
+        "target_ai_agent_id": agent_id,
+        "patch": payload.model_dump(),
+        "created_at": now_utc().isoformat(),
+    })
+    return {"agent": agent}
+
+
+@api.post("/admin/ai/regenerate")
+async def admin_regenerate_ai(current_admin: Dict[str, Any] = Depends(get_current_admin)):
+    """Force regenerate today's AI agents snapshot (replaces whatever the
+    daily cron produced or any admin edits). Useful when an operator wants
+    fresh strategies before the next 24h cron tick."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    agents = ai_mod.snapshot_agents()
+    snap = {
+        "date": today,
+        "agents": agents,
+        "created_at": now_utc().isoformat(),
+        "regenerated_by_admin": current_admin["email"],
+    }
+    await db.ai_snapshots.update_one({"date": today}, {"$set": snap}, upsert=True)
+    await db.admin_audit.insert_one({
+        "id": str(uuid.uuid4()),
+        "admin_id": current_admin["id"],
+        "admin_email": current_admin["email"],
+        "action": "ai_regenerate",
+        "created_at": now_utc().isoformat(),
+    })
+    return snap
+
+
+# ---------------------------- Routes: Admin — Fee reinvest (Build #13) ----------------------------
+async def _fees_summary() -> Dict[str, Any]:
+    """Aggregate all withdrawal-commission fees ever collected, minus any that
+    have already been reinvested (we tag those with type='fee_reinvest')."""
+    pipeline_fees = [
+        {"$match": {"type": "withdrawal"}},
+        {"$group": {"_id": None, "fee_sats": {"$sum": {"$ifNull": ["$fee_sats", 0]}}, "count": {"$sum": 1}}},
+    ]
+    pipeline_reinv = [
+        {"$match": {"type": "fee_reinvest"}},
+        {"$group": {"_id": None, "amount_sats": {"$sum": {"$ifNull": ["$amount_sats", 0]}}, "count": {"$sum": 1}}},
+    ]
+    fees = await db.transactions.aggregate(pipeline_fees).to_list(1)
+    reinv = await db.transactions.aggregate(pipeline_reinv).to_list(1)
+    fee_sats_total = int((fees[0] if fees else {}).get("fee_sats", 0))
+    reinv_sats_total = int((reinv[0] if reinv else {}).get("amount_sats", 0))
+    available_sats = max(0, fee_sats_total - reinv_sats_total)
+    return {
+        "fees_collected_sats": fee_sats_total,
+        "fees_collected_btc": round(sats_to_btc(fee_sats_total), 8),
+        "fees_collected_usd": round(btc_to_usd(sats_to_btc(fee_sats_total)), 2),
+        "fees_reinvested_sats": reinv_sats_total,
+        "fees_reinvested_btc": round(sats_to_btc(reinv_sats_total), 8),
+        "fees_reinvested_usd": round(btc_to_usd(sats_to_btc(reinv_sats_total)), 2),
+        "available_sats": available_sats,
+        "available_btc": round(sats_to_btc(available_sats), 8),
+        "available_usd": round(btc_to_usd(sats_to_btc(available_sats)), 2),
+        "withdrawals_count": int((fees[0] if fees else {}).get("count", 0)),
+        "reinvest_count": int((reinv[0] if reinv else {}).get("count", 0)),
+    }
+
+
+@api.get("/admin/fees/summary")
+async def admin_fees_summary(current_admin: Dict[str, Any] = Depends(get_current_admin)):
+    """Operator-only view of total withdrawal commission fees collected and
+    how much of that pool has been reinvested vs. is still available."""
+    return await _fees_summary()
+
+
+@api.post("/admin/fees/reinvest")
+async def admin_fees_reinvest(
+    payload: AdminFeesReinvestRequest,
+    current_admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    """Reinvest the unreinvested commission pool by crediting a target user's
+    balance with the available sats. Records a `fee_reinvest` transaction so
+    the next call's `_fees_summary` knows the pool is now drained."""
+    summary = await _fees_summary()
+    available = int(summary["available_sats"])
+    if available <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No unreinvested fees available. The commission pool is empty.",
+        )
+
+    target_id = payload.target_user_id or current_admin["id"]
+    target = await db.users.find_one({"id": target_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail=f"Target user {target_id} not found.")
+
+    amount_btc = sats_to_btc(available)
+    amount_usd = btc_to_usd(amount_btc)
+
+    # Credit the target's balance.
+    await db.users.update_one(
+        {"id": target_id},
+        {"$inc": {"balance_btc": amount_btc, "lifetime_earnings_btc": amount_btc}},
+    )
+
+    # Record a transaction so the summary stays consistent across calls.
+    tx_id = str(uuid.uuid4())
+    await db.transactions.insert_one({
+        "id": tx_id,
+        "user_id": target_id,
+        "type": "fee_reinvest",
+        "amount_sats": available,
+        "amount_btc": amount_btc,
+        "amount_usd": round(amount_usd, 4),
+        "status": "completed",
+        "note": (payload.note or "Operator reinvested commission fees").strip()[:280],
+        "created_at": now_utc().isoformat(),
+        "performed_by_admin": current_admin["id"],
+    })
+    await db.admin_audit.insert_one({
+        "id": str(uuid.uuid4()),
+        "admin_id": current_admin["id"],
+        "admin_email": current_admin["email"],
+        "action": "fees_reinvest",
+        "target_user_id": target_id,
+        "amount_sats": available,
+        "amount_usd": amount_usd,
+        "tx_id": tx_id,
+        "created_at": now_utc().isoformat(),
+    })
+
+    return {
+        "ok": True,
+        "tx_id": tx_id,
+        "target_user_id": target_id,
+        "target_user_email": target.get("email"),
+        "credited_sats": available,
+        "credited_btc": round(amount_btc, 8),
+        "credited_usd": round(amount_usd, 2),
+        "summary": await _fees_summary(),
+    }
 
 
 # ---------------------------- Health ----------------------------
