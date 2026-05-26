@@ -5,10 +5,19 @@ export type UserPublic = {
   id: string;
   email: string;
   referral_code?: string;
+  created_at?: string;
   balance_btc: number;
   balance_usd: number;
+  balance_sats?: number;
   lifetime_btc: number;
   lifetime_usd: number;
+  lifetime_sats?: number;
+  is_admin?: boolean;
+  is_banned?: boolean;
+  ad_free?: boolean;
+  auto_checkin?: boolean;
+  auto_reinvest?: boolean;
+  auto_reinvest_min_balance_usd?: number;
 };
 
 type Ctx = {

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { Tabs, useRouter } from 'expo-router';
+import React, { useRef } from 'react';
+import { Tabs, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform, View, StyleSheet, ActivityIndicator } from 'react-native';
 import { BlurView } from 'expo-blur';
@@ -10,16 +10,12 @@ import { useAds } from '@/src/AdContext';
 export default function TabsLayout() {
   const { user, loading } = useSession();
   const { showInterstitial } = useAds();
-  const router = useRouter();
   const lastTabRef = useRef<string>('index');
 
-  useEffect(() => {
-    if (!loading && !user) {
-      router.replace('/');
-    }
-  }, [user, loading, router]);
-
-  if (loading || !user) {
+  // Still hydrating session from storage — show a splash instead of swapping
+  // the tree mid-render (the previous useEffect+render-swap caused a crash
+  // on iOS when the user signed out from the Profile tab).
+  if (loading) {
     return (
       <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator color={colors.primary} size="large" />
@@ -27,11 +23,16 @@ export default function TabsLayout() {
     );
   }
 
-  // Fire an interstitial when the user transitions between tabs.
+  // Authenticated state lost (e.g. user just signed out). Redirect declares
+  // the navigation as a render-side effect, which expo-router/React Navigation
+  // handles without unmounting Tabs partway through.
+  if (!user) {
+    return <Redirect href="/" />;
+  }
+
   const onTabPress = (name: string) => {
     if (name !== lastTabRef.current) {
       lastTabRef.current = name;
-      // Fire-and-forget — AdProvider handles the gap/throttling itself.
       showInterstitial(`tab:${name}`).catch(() => {});
     }
   };
