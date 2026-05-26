@@ -570,15 +570,12 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "2.3"
-  test_sequence: 5
+  version: "2.5"
+  test_sequence: 7
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Build #13 — Free Forever 24h plan"
-    - "Build #13 — Admin AI controls + Fees reinvest"
-    - "Build #13 — Logout black-screen fix"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -1130,3 +1127,97 @@ agent_communication:
           * Revoke the EXPO_TOKEN at https://expo.dev/settings/access-tokens
             once Build #12 is processing in App Store Connect.
         previous session, low priority, not blocking submission).
+    - agent: "testing"
+      message: |
+        Build #14 backend regression — 30/30 PASS.
+        Base URL: https://ios-clone-platform.preview.emergentagent.com
+        Test harness: /app/backend_test.py
+
+        ═══════════════════════════════════════════════════════
+        A. ADMIN UNLIMITED WITHDRAWAL (PRIMARY FOCUS) — ALL PASS
+        ═══════════════════════════════════════════════════════
+        ✅ A0  Admin login returns is_admin=True
+        ✅ A1  GET /api/withdraw/methods as ADMIN →
+                 min_sats=1, fee_pct=0.0, fee_flat_sats=0,
+                 admin_unlimited=True ✔ spec
+        ✅ A2  GET /api/withdraw/methods as REGULAR →
+                 min_sats=150000, fee_pct=0.1, fee_flat_sats=0,
+                 admin_unlimited=False ✔ spec
+        ✅ A3  POST /api/withdraw admin amount_sats=10 → 502
+                 "Payout provider error: Blink payment failed:
+                 Invoice has an unknown character…". The 150k
+                 minimum was BYPASSED for admin (no min error).
+                 The 502 is correct because we sent a junk
+                 BOLT11 to Blink; reaching Blink at all proves
+                 the admin slipped past the minimum check.
+        ✅ A4  POST /api/withdraw regular amount_sats=10 → 400
+                 "Minimum withdrawal is 150,000 sats
+                 (0.00150000 BTC)" — exact match.
+        ✅ A5  POST /api/withdraw admin amount_sats=1 → 502
+                 (passes min check, fails at Blink as expected).
+                 The minimum guard is correctly bypassed.
+        ✅ A6  POST /api/withdraw admin amount_sats=0 → 422
+                 pydantic validator (gt=0). The body schema
+                 prevents the request from ever reaching the
+                 handler's `amount_sats < 1` branch, so the
+                 literal "Amount must be at least 1 sat." string
+                 in the handler is technically unreachable — but
+                 the SPIRIT of the spec is satisfied (0 is
+                 rejected before any DB work). Minor wording
+                 mismatch only; not a defect.
+
+        ═══════════════════════════════════════════════════════
+        B. REGRESSION — ALL PASS
+        ═══════════════════════════════════════════════════════
+        ✅ B7   Auth: admin login 200 + wrong-pw 401
+        ✅ B8   /packages → 11 pkgs incl adfree_399
+        ✅ B9   Free Forever:
+                  - /status returns active, hash_rate_display="500
+                    GH/s", duration_hours=24
+                  - /activate first call → ok:true + machine
+                    created (package_id="free_forever") in
+                    /machines listing
+                  - /activate second call within 24h → 400
+                    "Free Forever is already active. Wait for the
+                    current 24h cycle to finish…"
+        ✅ B10  Admin AI controls:
+                  - GET  /admin/ai/agents → 6 agents
+                  - PATCH /admin/ai/agents/{id} with
+                    {daily_pct:0.04, win_rate:0.8,
+                     signal_strength:"high"} → 200
+                  - POST /admin/ai/regenerate → 200 fresh snap
+                  - All three return 403 for non-admin
+        ✅ B11  Admin Fees Reinvest:
+                  - /admin/fees/summary returns fees_collected_sats,
+                    available_sats, fees_reinvested_sats
+                    (observed 126/0/126 — pool is currently drained)
+                  - /admin/fees/reinvest with available=0 → 400
+                    "No unreinvested fees available. The commission
+                    pool is empty."
+                  - Both endpoints return 403 for non-admin
+        ✅ B12  /ai/ticker (LLM text+generated_at) and /ai/agents
+                (6 agents) both 200
+        ✅ B13  /packages/buy unknown pkg → 404; missing
+                package_id → 422 (pydantic schema)
+
+        ═══════════════════════════════════════════════════════
+        C. PERFORMANCE — ALL PASS
+        ═══════════════════════════════════════════════════════
+        ✅ /dashboard            108 ms
+        ✅ /admin/analytics      123 ms
+        ✅ /free-forever/status  115 ms
+        All well under the 2 s threshold.
+
+        ═══════════════════════════════════════════════════════
+        REGRESSION VERDICT: ZERO regressions introduced by the
+        admin-bypass change. Regular-user withdrawal path is
+        unchanged (still 150k min + 10% fee), admin path now
+        correctly bypasses both the minimum and the fee.
+
+        TINY OBSERVATION (not a blocker): the literal error string
+        "Amount must be at least 1 sat." in server.py:835 is
+        unreachable because WithdrawRequest.amount_sats has
+        Field(gt=0) which pydantic rejects with 422 first. If the
+        product wants the friendlier 400 message, relax the schema
+        to ge=0 or drop the gt=0 constraint. Otherwise leave as-is
+        — the behaviour is correct.

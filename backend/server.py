@@ -790,7 +790,21 @@ async def buy_package(
 
 # ---------------------------- Routes: Withdraw ----------------------------
 @api.get("/withdraw/methods")
-async def withdraw_methods():
+async def withdraw_methods(current_user: Dict[str, Any] = Depends(get_current_user)):
+    # Operator privilege — admins withdraw any amount at any time at 0% fee.
+    # Build #14 ask: keep regular users on the 150k sats / 10% rules but
+    # allow the operator account to drain commission balances freely.
+    if current_user.get("is_admin"):
+        return {
+            "methods": WITHDRAW_METHODS,
+            "min_sats": 1,                 # 1 sat — effectively unrestricted
+            "max_sats": MAX_WITHDRAW_SATS,
+            "max_daily_sats": MAX_DAILY_WITHDRAW_SATS,
+            "fee_pct": 0.0,
+            "fee_flat_sats": 0,
+            "btc_usd_rate": BTC_USD_RATE,
+            "admin_unlimited": True,
+        }
     return {
         "methods": WITHDRAW_METHODS,
         "min_sats": MIN_WITHDRAW_SATS,
@@ -799,6 +813,7 @@ async def withdraw_methods():
         "fee_pct": WITHDRAW_FEE_PCT,
         "fee_flat_sats": WITHDRAW_FEE_FLAT_SATS,
         "btc_usd_rate": BTC_USD_RATE,
+        "admin_unlimited": False,
     }
 
 
@@ -811,8 +826,14 @@ async def withdraw(
     if not method:
         raise HTTPException(status_code=400, detail="Lightning is the only supported withdrawal method")
 
+    # Build #14 — admins bypass the 150k sats minimum AND the 10% fee.
+    # Regular users still hit MIN_WITHDRAW_SATS + 10% fee unchanged.
+    is_admin_caller = bool(current_user.get("is_admin"))
+
     amount_sats = int(payload.amount_sats)
-    if amount_sats < MIN_WITHDRAW_SATS:
+    if amount_sats < 1:
+        raise HTTPException(status_code=400, detail="Amount must be at least 1 sat.")
+    if not is_admin_caller and amount_sats < MIN_WITHDRAW_SATS:
         raise HTTPException(
             status_code=400,
             detail=f"Minimum withdrawal is {MIN_WITHDRAW_SATS:,} sats ({MIN_WITHDRAW_SATS / SATS_PER_BTC:.8f} BTC)",
@@ -823,7 +844,7 @@ async def withdraw(
             detail=f"Maximum withdrawal is {MAX_WITHDRAW_SATS:,} sats ({MAX_WITHDRAW_SATS / SATS_PER_BTC:.8f} BTC)",
         )
 
-    fee_sats = withdrawal_fee_sats(amount_sats)
+    fee_sats = 0 if is_admin_caller else withdrawal_fee_sats(amount_sats)
     total_debit_sats = amount_sats + fee_sats
     amount_btc = sats_to_btc(amount_sats)
     fee_btc = sats_to_btc(fee_sats)

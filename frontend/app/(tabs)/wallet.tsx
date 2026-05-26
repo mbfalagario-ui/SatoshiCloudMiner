@@ -39,6 +39,7 @@ export default function Wallet() {
   const [maxSats, setMaxSats] = useState(WITHDRAW_MAX_SATS);
   const [feePct, setFeePct] = useState(WITHDRAW_FEE_PCT);
   const [feeFlat, setFeeFlat] = useState(WITHDRAW_FEE_FLAT_SATS);
+  const [adminUnlimited, setAdminUnlimited] = useState(false);
   const [btcUsd, setBtcUsd] = useState(65000);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -52,6 +53,7 @@ export default function Wallet() {
       if (typeof r.fee_pct === 'number') setFeePct(r.fee_pct);
       if (typeof r.fee_flat_sats === 'number') setFeeFlat(r.fee_flat_sats);
       if (typeof r.btc_usd_rate === 'number') setBtcUsd(r.btc_usd_rate);
+      setAdminUnlimited(Boolean(r.admin_unlimited));
     } catch {
       // keep defaults
     } finally {
@@ -134,9 +136,15 @@ export default function Wallet() {
             </Text>
             <Text style={styles.balanceBtc}>₿ {(user?.balance_btc ?? 0).toFixed(8)} · ≈ ${(user?.balance_usd ?? 0).toFixed(2)}</Text>
             <View style={styles.limitRow}>
-              <Ionicons name="information-circle-outline" size={14} color={colors.textTertiary} />
-              <Text style={styles.limitText}>
-                Min {fmtSats(minSats)} · No max · flat {(feePct * 100).toFixed(0)}% network fee
+              <Ionicons
+                name={adminUnlimited ? 'shield-checkmark' : 'information-circle-outline'}
+                size={14}
+                color={adminUnlimited ? colors.primary : colors.textTertiary}
+              />
+              <Text style={[styles.limitText, adminUnlimited && { color: colors.primary, fontWeight: '700' }]}>
+                {adminUnlimited
+                  ? 'OPERATOR — withdraw any amount · 0% fee'
+                  : `Min ${fmtSats(minSats)} · No max · flat ${(feePct * 100).toFixed(0)}% network fee`}
               </Text>
             </View>
           </View>
