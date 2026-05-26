@@ -18,22 +18,25 @@ export default function AdminAnalytics() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    if (!user || !user.is_admin) return;
     setLoading(true);
     try {
       const r = await api('/admin/analytics');
       setData(r);
     } catch (e) {
-      // unauthorized → bounce back
-      router.replace('/profile');
+      // unauthorized → bounce back. We use a soft fallback so a brief
+      // session-null window during sign-out doesn't crash the screen.
+      try { router.replace('/'); } catch {}
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [router, user]);
 
   useEffect(() => {
-    if (user && !user.is_admin) router.replace('/profile');
-    else load();
-  }, [user, load, router]);
+    if (!user) return;                  // _layout will redirect; do nothing here
+    if (!user.is_admin) return;         // _layout will redirect; do nothing here
+    load();
+  }, [user, load]);
 
   if (loading || !data) {
     return (

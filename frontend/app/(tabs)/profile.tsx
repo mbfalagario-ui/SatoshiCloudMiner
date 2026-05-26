@@ -65,8 +65,13 @@ export default function Profile() {
 
   const onLogout = () => {
     confirmDialog('Sign out?', 'You will need to sign in again.', async () => {
+      // signOut() clears the session token + sets user → null. The (tabs)
+      // layout watches `user` and renders <Redirect href="/" /> as a render-
+      // side effect, which is the safe expo-router pattern. Calling
+      // router.replace('/') here in addition was racing the <Redirect>
+      // unmount and crashing iOS native on TestFlight build #10 (admin
+      // logout). Leaving navigation entirely to the layout is the fix.
       await signOut();
-      router.replace('/');
     }, 'Sign out');
   };
 
@@ -170,7 +175,7 @@ export default function Profile() {
           <Text style={styles.logoutText}>Sign out</Text>
         </TouchableOpacity>
 
-        <Text style={styles.appVersion}>Satoshi Cloud Miner v1.0.0 (1)</Text>
+        <Text style={styles.appVersion}>Satoshi Cloud Miner v1.0.0 (11)</Text>
         <Text style={styles.disclaimer}>
           Satoshi Cloud Miner is a cloud computing simulation and monitoring tool. It is not a financial,
           investment, or trading platform. Outcomes depend on server status and operational

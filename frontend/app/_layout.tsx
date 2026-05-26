@@ -25,6 +25,7 @@ export default function RootLayout() {
               <Stack.Screen name="sign-in" />
               <Stack.Screen name="sign-up" />
               <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="admin" />
               <Stack.Screen name="machines" />
               <Stack.Screen name="transactions" />
               <Stack.Screen name="daily" />

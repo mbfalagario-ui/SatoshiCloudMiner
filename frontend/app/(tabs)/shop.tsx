@@ -15,7 +15,7 @@ import { api } from '@/src/utils/api';
 import { colors, spacing, radius, fonts, shadows, media, fmtUsd } from '@/src/utils/theme';
 import { useSession } from '@/src/ctx';
 import { confirmDialog, notify } from '@/src/utils/dialog';
-import { isIapAvailable, initIap, buyProduct } from '@/src/utils/iap';
+import { isIapAvailable, initIap, buyProduct, fetchProducts } from '@/src/utils/iap';
 
 type Pkg = {
   id: string;
@@ -27,6 +27,14 @@ type Pkg = {
   daily_yield_usd: number;
   badge?: string | null;
   bogo: boolean;
+  // Backend-enriched fields (computed at /api/packages):
+  total_return_usd?: number;
+  roi_pct?: number;
+  break_even_days?: number;
+  profitable?: boolean;
+  profitability_score?: number;
+  ai_optimized?: boolean;
+  entitlement?: string;
 };
 
 export default function Shop() {
@@ -50,6 +58,19 @@ export default function Shop() {
     // Pre-warm StoreKit connection so the first tap on "Buy" is instant.
     if (isIapAvailable()) initIap().catch(() => {});
   }, [load]);
+
+  // Once the backend package list arrives, pre-fetch the matching StoreKit
+  // products so `requestPurchase` doesn't throw `E_PRODUCT_NOT_AVAILABLE` on
+  // the very first tap (required by react-native-iap v15 Nitro).
+  useEffect(() => {
+    if (!pkgs.length) return;
+    if (!isIapAvailable()) return;
+    const skus = pkgs.map((p) => p.id);
+    fetchProducts(skus).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.warn('[Shop] StoreKit pre-fetch failed (non-fatal):', e);
+    });
+  }, [pkgs]);
 
   const buy = (pkg: Pkg) => {
     const iapOn = isIapAvailable();

@@ -6,27 +6,35 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/utils/api';
+import { useSession } from '@/src/ctx';
 import { colors, spacing, radius, fonts, shadows, fmtUsd } from '@/src/utils/theme';
 import { fmtSats } from '@/src/utils/sats';
 import { confirmDialog, notify } from '@/src/utils/dialog';
 
 export default function AdminUsers() {
+  const { user } = useSession();
   const [users, setUsers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
+    if (!user || !user.is_admin) return;  // signed out / not admin — bail
     setLoading(true);
     try {
       const q = search ? `?search=${encodeURIComponent(search)}` : '';
       const r = await api(`/admin/users${q}`);
       setUsers(r.users || []);
+    } catch {
+      /* silently fail on transient 401 during sign-out */
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [search, user]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!user || !user.is_admin) return;
+    load();
+  }, [load, user]);
 
   const patch = async (u: any, body: any, msg: string) => {
     try {
