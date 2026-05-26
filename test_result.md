@@ -568,6 +568,179 @@ frontend:
               python /app/store/screenshots/capture.py \
                 --base $EXPO_PUBLIC_BACKEND_URL
 
+backend_build16:
+  - task: "FULL BACKEND AUDIT (Build #16)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            Build #16 FULL BACKEND AUDIT executed via
+            /app/backend_test.py against
+            https://ios-clone-platform.preview.emergentagent.com/api.
+            RESULT: 55/59 hard-checks PASS. ZERO critical bugs,
+            ZERO 500s, ZERO regressions. The 4 hard-fails are
+            test-spec naming mismatches and a stricter-than-spec
+            422 validation — all backend behavior is correct.
+
+            ========= AUTH + ACCOUNT (1-6) =========
+            ✅ 01 POST /auth/register new → 200 + token + user
+            ✅ 02 POST /auth/register dup → 400
+                   "Email already registered"
+            ✅ 03 POST /auth/login correct → 200
+            ✅ 04 POST /auth/login wrong → 401
+            ✅ 05 GET /auth/me → 200 with full user
+            ✅ 06 GET /auth/me no token → 401
+
+            ========= PACKAGES + IAP (7-8) =========
+            ✅ 07 GET /packages → 200 with 11 packages incl
+                   adfree_399 (returned shape:
+                   {"packages":[...]})
+            ✅ 08 POST /packages/buy malformed → 422
+
+            ========= DASHBOARD + MACHINES (9-10) =========
+            ⚠️  09 GET /dashboard → 200. Spec asked for keys
+                   "hash_rate_total, machines, balance_btc" but
+                   actual keys are "hash_rate, active_machines,
+                   user.{balance_btc,...}". CONTENT IS CORRECT
+                   (hashrate, machines, balances all present);
+                   only key names differ from the loose spec.
+                   NOT A BUG. Working.
+            ✅ 10 GET /machines → 200 with array
+
+            ========= DAILY CHECK-IN (11-12) =========
+            ⚠️  11 POST /api/checkin/daily → 404. Actual route
+                   is POST /api/daily-checkin (and the GET
+                   status route is /api/daily-checkin/status).
+                   Hitting the correct route returns 200 with
+                   {awarded_usd, streak, next_available_at}.
+                   Spec/route naming mismatch — either fix the
+                   spec or add a /checkin/daily alias.
+            ✅ 12 Second /daily-checkin same day → 400 with
+                   "Check in again at <iso>".
+
+            ========= REFERRALS (13) =========
+            ⚠️  13 GET /api/referrals/summary → 404. Actual
+                   route is GET /api/referral (singular, no
+                   /summary suffix). Hitting the correct route
+                   returns 200 with {code, invited_count,
+                   bonus_per_invite_usd, share_text}. Naming
+                   mismatch — same recommendation as #11.
+
+            ========= FREE FOREVER (14-16) =========
+            ✅ 14 GET /free-forever/status → 200 with
+                   hash_rate_display="500 GH/s",
+                   duration_hours=24
+            ✅ 15 POST /free-forever/activate fresh → 200,
+                   creates machine, sets expires_at +24h
+            ✅ 16 Second activate → 400 "Free Forever is
+                   already active. Wait for the current 24h
+                   cycle to finish before activating again."
+
+            ========= WITHDRAW (17-21) =========
+            ✅ 17 admin /withdraw/methods → min_sats=1,
+                   fee_pct=0, admin_unlimited=true
+            ✅ 18 user  /withdraw/methods → min_sats=150000,
+                   fee_pct=0.10, admin_unlimited=false
+            ✅ 19 user POST /withdraw amount_sats=10 → 400
+                   "Minimum withdrawal is 150,000 sats
+                    (0.00150000 BTC)"
+            ✅ 20 user POST /withdraw amount_sats=0 → 422
+                   (pydantic gt=0; spec allowed 400/422)
+            ⚠️  21 user POST /withdraw amount_sats=200_000_000
+                   → 422 (pydantic le=10_000_000) instead of
+                   the spec-suggested 400. Request IS correctly
+                   rejected, just with a stricter validation
+                   layer than the spec anticipated. Either
+                   loosen the schema (so the 400 max-cap branch
+                   in the handler is reachable) or update the
+                   spec. Behavior is safe.
+
+            ========= AUTO SETTINGS (22-23) =========
+            ✅ 22 GET /auto/settings → 200 with auto_checkin,
+                   auto_reinvest, auto_reinvest_min_balance_usd
+            ✅ 23 POST /auto/settings toggle → 200, change
+                   persisted
+
+            ========= TRANSACTIONS (24) =========
+            ✅ 24 GET /transactions → 200 with array
+
+            ========= AI (25-26) =========
+            ✅ 25 GET /ai/ticker → 200 {text, generated_at}
+            ✅ 26 GET /ai/agents → 200 with 6 agents
+
+            ========= ADMIN (27-36) =========
+            ✅ 27 /admin/analytics admin → 200
+            ✅ 28 /admin/analytics non-admin → 403
+            ✅ 29 /admin/users admin → 200
+            ✅ 30 /admin/transactions admin → 200
+            ✅ 31 /admin/audit admin → 200
+            ✅ 32 /admin/ai/agents admin → 200 (6 agents)
+            ✅ 33 PATCH /admin/ai/agents/{id} admin → 200
+                   (daily_pct/win_rate/signal_strength updated)
+            ✅ 34 POST /admin/ai/regenerate admin → 200
+            ✅ 35 GET /admin/fees/summary admin → 200 with
+                   all required keys
+            ✅ 36 POST /admin/fees/reinvest fees=0 → 400
+                   "No unreinvested fees available."
+
+            ========= PREMIUM SUPPORT (37-47) =========
+            ✅ 37 GET /support/thread user → 200
+                   {thread, messages, sla_hours}
+            ✅ 38 POST /support/messages → 200 ok:true,
+                   sender=user
+            ✅ 39 GET /support/unread → 200 unread_user_count=0
+            ✅ 40 GET /admin/support/threads admin → 200 with
+                   7 threads
+            ✅ 41 GET /admin/support/unread admin → 200
+            ✅ 42 GET /admin/support/threads/{user_id} admin
+                   → 200
+            ✅ 43 POST /admin/support/threads/{user_id}/reply
+                   admin → 200, sender=admin
+            ✅ 44 POST /admin/support/threads/{user_id}/close
+                   admin → 200
+            ✅ 45 POST /support/messages empty → 422
+            ✅ 46 POST /support/messages 2001-char → 422
+            ✅ 47 cross-account: non-admin → /admin/support/
+                   threads → 403
+
+            ========= PERFORMANCE SMOKE (48) =========
+            ALL <500ms (typical 105-165ms):
+            ✅ /support/thread          108 ms
+            ✅ /admin/support/threads   114 ms
+            ✅ /support/unread          116 ms
+            ✅ /admin/support/unread    105 ms
+            ✅ /admin/ai/agents         129 ms
+            ✅ /admin/fees/summary      113 ms
+            ✅ /free-forever/status     141 ms
+            ✅ /withdraw/methods        165 ms
+
+            ========= EDGE CASES (49-50) =========
+            ✅ 49 Garbage JWT → 401 on /auth/me, /dashboard,
+                   /machines, /transactions,
+                   /free-forever/status, /support/thread
+            ✅ 50 POST without Content-Type but valid JSON body
+                   → 200 (FastAPI/Starlette parse the body
+                   gracefully when the JSON shape is valid)
+
+            ========= VERDICT =========
+            ZERO 500s, ZERO critical bugs, ZERO regressions.
+            All 50 endpoints behave correctly. The 4 hard-fails
+            are minor cosmetic deltas vs the loose spec:
+              • #09 different (correct) field names in
+                /dashboard payload
+              • #11 route is /daily-checkin not /checkin/daily
+              • #13 route is /referral not /referrals/summary
+              • #21 returns 422 (pydantic) instead of 400 for
+                amount > 10M sats — still safely rejected
+            All four are pre-existing behaviors, not new
+            regressions. Backend is production-ready.
+
 backend_build15:
   - task: "Premium Support Chat (Build #15)"
     implemented: true
@@ -1376,4 +1549,60 @@ agent_communication:
         NOTE: /api/packages returns {"packages":[...]}, not a
         raw array — content is correct (11 pkgs incl
         adfree_399). Test harness handles both shapes.
+
+    - agent: "testing"
+      message: |
+        Build #16 FULL BACKEND AUDIT COMPLETE.
+        Suite: /app/backend_test.py
+        Base: https://ios-clone-platform.preview.emergentagent.com/api
+        Score: 55/59 hard-checks PASS, ZERO 500s, ZERO
+        critical bugs, ZERO regressions. All 50 review-request
+        endpoints exercised against a fresh-registered user and
+        the admin (mbfalagario@gmail.com).
+
+        The four hard-fails are NOT functional bugs — they are
+        cosmetic deltas vs the review spec text:
+
+          1) /api/checkin/daily → 404. Real route is
+             /api/daily-checkin (POST) and
+             /api/daily-checkin/status (GET). Behavior at the
+             real route is correct: 200 first call, 400
+             "Check in again at <iso>" second call.
+
+          2) /api/referrals/summary → 404. Real route is
+             /api/referral (GET). Returns {code,
+             invited_count, bonus_per_invite_usd, share_text}.
+
+          3) /api/dashboard returns keys
+             hash_rate / active_machines / user.balance_btc
+             rather than hash_rate_total / machines /
+             balance_btc as the spec text loosely worded it.
+             All required data IS present — just under
+             different field names.
+
+          4) POST /api/withdraw amount_sats=200_000_000 returns
+             422 (pydantic le=10_000_000) instead of a 400
+             "Maximum withdrawal" message. The request IS
+             safely rejected; only the status code differs.
+             If product wants the 400 path: relax
+             WithdrawRequest.amount_sats to drop le=10M and
+             surface the friendlier 400 from the handler. Same
+             pattern as Build #14's gt=0/422 note.
+
+        Performance: every smoke target replied in 105-165 ms
+        (target was <500 ms). No slow endpoints.
+
+        Security: garbage JWT yields 401 across all protected
+        routes; non-admin → admin routes yield 403 cleanly.
+
+        Premium Support: full round-trip (user POST → admin
+        sees thread → admin views (unread auto-decrement) →
+        admin reply → user unread=1 → user views (unread
+        auto-clears) → admin close) is rock-solid.
+
+        Recommendation to main agent: either add the two
+        route aliases (/checkin/daily, /referrals/summary)
+        for spec-compliance, or update the build spec to use
+        the canonical routes. Otherwise the backend is in
+        production-ready shape.
 

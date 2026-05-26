@@ -12,8 +12,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StatusBar,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { api } from '@/src/utils/api';
@@ -59,6 +60,7 @@ function formatStamp(iso?: string | null): string {
 }
 
 export default function AdminSupport() {
+  const insets = useSafeAreaInsets();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [totalUnread, setTotalUnread] = useState(0);
   const [openCount, setOpenCount] = useState(0);
@@ -242,21 +244,32 @@ export default function AdminSupport() {
       <Modal
         visible={!!selectedThread}
         animationType="slide"
+        presentationStyle="fullScreen"
         onRequestClose={() => setSelectedThread(null)}
+        statusBarTranslucent
       >
-        <SafeAreaView style={styles.safe} edges={['top']}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+        {/* IMPORTANT: <SafeAreaView> inside a <Modal> does NOT inherit the
+            root safe-area context on iOS, so the header was overlapping
+            the status bar / back button became unreachable (Build #15 bug
+            from TestFlight screenshot). Read insets via the hook from the
+            parent context and apply paddingTop manually. */}
+        <View style={[styles.modalRoot, { paddingTop: insets.top }]}>
           <KeyboardAvoidingView
             style={{ flex: 1 }}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
           >
             <View style={styles.detailHeader}>
               <TouchableOpacity
+                testID="admin-thread-back-btn"
                 onPress={() => setSelectedThread(null)}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={styles.backBtn}
               >
-                <Ionicons name="chevron-back" size={24} color={colors.text} />
+                <Ionicons name="chevron-back" size={26} color={colors.text} />
               </TouchableOpacity>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, marginLeft: 4 }}>
                 <Text style={styles.detailTitle} numberOfLines={1}>
                   {selectedThread?.user_email}
                 </Text>
@@ -265,7 +278,7 @@ export default function AdminSupport() {
                 </Text>
               </View>
               {selectedThread?.status !== 'closed' ? (
-                <TouchableOpacity onPress={onCloseThread} style={styles.closeBtn}>
+                <TouchableOpacity onPress={onCloseThread} style={styles.closeBtn} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
                   <Ionicons name="archive-outline" size={14} color={colors.textSecondary} />
                   <Text style={styles.closeBtnText}>Close</Text>
                 </TouchableOpacity>
@@ -306,7 +319,7 @@ export default function AdminSupport() {
               </ScrollView>
             )}
 
-            <View style={styles.composer}>
+            <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
               <TextInput
                 testID="admin-reply-input"
                 value={reply}
@@ -336,7 +349,7 @@ export default function AdminSupport() {
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
-        </SafeAreaView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -411,14 +424,23 @@ const styles = StyleSheet.create({
   closedChipText: { color: colors.textTertiary, fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
 
   // Detail modal
+  modalRoot: { flex: 1, backgroundColor: colors.bg },
   detailHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
     gap: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderSoft,
+    minHeight: 52,
+  },
+  backBtn: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: -8,
   },
   detailTitle: { color: colors.text, fontSize: 15, fontWeight: '800' },
   detailSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },

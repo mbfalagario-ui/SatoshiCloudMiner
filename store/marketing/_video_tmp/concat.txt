@@ -1,0 +1,11 @@
+file '/app/store/marketing/_video_tmp/slide-00.png'
+duration 5.6
+file '/app/store/marketing/_video_tmp/slide-01.png'
+duration 5.6
+file '/app/store/marketing/_video_tmp/slide-02.png'
+duration 5.6
+file '/app/store/marketing/_video_tmp/slide-03.png'
+duration 5.6
+file '/app/store/marketing/_video_tmp/slide-04.png'
+duration 5.6
+file '/app/store/marketing/_video_tmp/slide-04.png'
