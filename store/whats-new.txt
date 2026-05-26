@@ -1,27 +1,32 @@
-Satoshi Cloud Miner 1.0.0 — Build #14 (Operator unlimited withdrawal)
+Satoshi Cloud Miner 1.0.0 — Build #15 (Premium Support Chat)
 
 What's new in this build:
 
-NEW — Operator unlimited withdrawal
-- Admin operators now see a dedicated "OPERATOR — withdraw any amount · 0%
-  fee" badge on the Wallet tab and can drain any balance amount to a
-  Lightning invoice/address at 0% commission with no per-transaction
-  minimum. All other users continue to operate under the standard
-  150,000 sats minimum + 10% flat network fee.
-- The backend treats this as a privileged path tied to is_admin=true and
-  records the action in the operator audit log just like every other
-  admin action.
+NEW — Premium Support Chat
+- Every user now has a dedicated 1-to-1 support thread with our operator
+  team, reachable from "Premium Support" in the Profile menu.
+- Send a message any time; we reply within 48 hours. Unread admin replies
+  surface as a red badge on Profile → Premium Support so you'll know the
+  moment a reply lands.
+- A clean chat UI with auto-scroll, pull-to-refresh, and a 12-second
+  live refresh while the screen is foregrounded.
+
+NEW — Operator Console: Support inbox
+- A new "Support" quick-link inside the Operator Console shows every
+  open thread, with unread counts and a 48h SLA reminder up top.
+- Tap a thread to read the full conversation and reply inline; closing
+  a thread is a single tap. Every operator reply is recorded in the
+  admin audit log.
 
 Previous changes still in place:
-- Free Forever 24-hour complimentary mining plan (500 GH/s, one
-  activation per 24h, live countdown on Home).
-- Operator Console with editable AI Trading Agents, daily snapshot
-  regeneration, and one-tap commission-fee reinvestment.
-- Stable sign-out routing — auth screen mounts before session state
-  teardown, no black-screen edge cases.
-- Real Apple In-App Purchase via StoreKit 2 for all 10 mining plans and
-  the Ad-Free $3.99 tier.
+- Operator unlimited withdrawal at 0% fee (badge visible on Wallet tab
+  for admin accounts; regular users continue under the 150k sats min +
+  10% flat fee).
+- Free Forever 24-hour complimentary mining plan with live countdown.
+- Editable AI Trading Agents, snapshot regeneration, one-tap commission
+  fee reinvestment.
+- Real Apple In-App Purchase via StoreKit 2 for all 10 mining plans
+  plus the Ad-Free $3.99 tier.
 - Lightning withdrawals (BOLT11 + Lightning Address).
-- Server-side daily check-in cron and optional auto-reinvest.
-- AI Trading Agents simulation with daily P&L + win-rate.
-- AI market commentary ticker refreshed daily.
+- Stable sign-out routing.
+- AI Trading Agents simulation + daily AI market commentary ticker.
