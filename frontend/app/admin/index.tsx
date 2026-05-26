@@ -22,6 +22,22 @@ export default function AdminAnalytics() {
   const [aiBusy, setAiBusy] = useState(false);
   const [feeBusy, setFeeBusy] = useState(false);
   const [editingAgent, setEditingAgent] = useState<any>(null);
+  const [supportUnread, setSupportUnread] = useState(0);
+
+  // Poll the support inbox unread count so the Operator Console badge is live.
+  useEffect(() => {
+    if (!user || !user.is_admin) return;
+    let mounted = true;
+    const fetch = async () => {
+      try {
+        const r = await api('/admin/support/unread');
+        if (mounted) setSupportUnread(Number(r?.unread_admin_count || 0));
+      } catch {}
+    };
+    fetch();
+    const t = setInterval(fetch, 20_000);
+    return () => { mounted = false; clearInterval(t); };
+  }, [user]);
 
   const load = useCallback(async () => {
     if (!user || !user.is_admin) return;
@@ -135,6 +151,7 @@ export default function AdminAnalytics() {
         <View style={styles.quickRow}>
           <QuickBtn icon="people" label="Users" onPress={() => router.push('/admin/users')} />
           <QuickBtn icon="swap-horizontal" label="Txns" onPress={() => router.push('/admin/transactions')} />
+          <QuickBtn icon="chatbubbles" label="Support" badge={supportUnread} onPress={() => router.push('/admin/support' as any)} />
         </View>
 
         {/* Headline cards */}
@@ -415,11 +432,16 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function QuickBtn({ icon, label, onPress }: any) {
+function QuickBtn({ icon, label, onPress, badge }: any) {
   return (
     <TouchableOpacity style={styles.quickBtn} onPress={onPress} activeOpacity={0.85}>
       <Ionicons name={icon} size={16} color={colors.primary} />
       <Text style={styles.quickBtnText}>{label}</Text>
+      {badge && badge > 0 ? (
+        <View style={styles.quickBadge}>
+          <Text style={styles.quickBadgeText}>{badge > 99 ? '99+' : badge}</Text>
+        </View>
+      ) : null}
       <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} />
     </TouchableOpacity>
   );
@@ -445,6 +467,17 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSoft,
   },
   quickBtnText: { flex: 1, color: colors.text, fontWeight: '700', fontSize: 13 },
+  quickBadge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+  quickBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   cards: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
   kpi: {
     flexBasis: '48%',

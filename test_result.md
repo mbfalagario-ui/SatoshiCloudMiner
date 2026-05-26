@@ -568,6 +568,89 @@ frontend:
               python /app/store/screenshots/capture.py \
                 --base $EXPO_PUBLIC_BACKEND_URL
 
+backend_build15:
+  - task: "Premium Support Chat (Build #15)"
+    implemented: true
+    working: true
+    file: "backend/server.py (lines 1226-1463)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            Full Build #15 backend regression executed via
+            /app/backend_test.py against
+            https://ios-clone-platform.preview.emergentagent.com/api.
+            RESULT: 32/32 PASS.
+
+            A. Premium Support Chat (17/17 PASS):
+              ✅ A1  GET /support/thread (fresh user) → 200 with
+                    thread.status="open", unread_user_count=0,
+                    messages=[], sla_hours=48.
+              ✅ A2  POST /support/messages → ok:true,
+                    message.sender="user", body matches,
+                    read_at=null.
+              ✅ A3  GET /support/unread (user) → 0 (own msg
+                    doesn't count).
+              ✅ A4  GET /admin/support/threads (admin) → thread
+                    appears with unread_admin_count=1,
+                    total_unread_admin=1, open_count>=1,
+                    sla_hours=48.
+              ✅ A5  GET /admin/support/unread (admin) → 1.
+              ✅ A6  GET /admin/support/threads/{user_id} (admin) →
+                    200 with messages; subsequent
+                    /admin/support/unread → 0 (auto-decremented).
+              ✅ A7  POST /admin/support/threads/{user_id}/reply →
+                    message.sender="admin", body matches.
+              ✅ A8  GET /support/unread (user) after admin reply
+                    → 1.
+              ✅ A9  GET /support/thread (user) → both messages
+                    chronological [user, admin]; unread auto-clears
+                    to 0.
+              ✅ A10 POST /admin/support/threads/{user_id}/close →
+                    200; thread now status="closed" in
+                    /admin/support/threads list.
+              ✅ A11 Auth gates: non-admin user → 403 on
+                    /admin/support/threads; no-token →
+                    /support/messages → 401.
+              ✅ A12 Edge cases: empty body → 422 (pydantic
+                    min_length=1); 2001-char body → 422
+                    (pydantic max_length=2000).
+
+            B. Regression of previous builds (11/11 PASS):
+              ✅ B13 /withdraw/methods: admin gets
+                    {min_sats:1, fee_pct:0, admin_unlimited:true};
+                    regular user gets
+                    {min_sats:150000, fee_pct:0.10,
+                     admin_unlimited:false};
+                    regular POST /withdraw amount_sats=10 → 400
+                    "Minimum withdrawal is 150,000 sats".
+              ✅ B14 /free-forever/status →
+                    hash_rate_display="500 GH/s",
+                    duration_hours=24.
+                    /admin/ai/agents → 6 agents.
+                    POST /admin/ai/regenerate → 200.
+                    /admin/fees/summary → all required keys
+                    present.
+              ✅ B15 Auth admin login 200; /packages returns
+                    {packages:[...]} with 11 entries incl.
+                    adfree_399; /dashboard 200; /ai/ticker 200.
+
+            C. Performance smoke (4/4 PASS, all <200 ms):
+              ✅ /support/thread          106 ms
+              ✅ /admin/support/threads   153 ms
+              ✅ /support/unread          106 ms
+              ✅ /admin/support/unread    110 ms
+
+            NOTES:
+              * Response shape of GET /api/packages is
+                {"packages":[...]}, not a raw array — verified
+                content matches spec (11 pkgs incl. adfree_399).
+                Test harness updated to handle both shapes.
+              * No regressions detected. No critical issues.
+
 metadata:
   created_by: "main_agent"
   version: "2.5"
@@ -1221,3 +1304,76 @@ agent_communication:
         product wants the friendlier 400 message, relax the schema
         to ge=0 or drop the gt=0 constraint. Otherwise leave as-is
         — the behaviour is correct.
+
+    - agent: "testing"
+      message: |
+        Build #15 backend regression COMPLETE — 32/32 PASS.
+        Base: https://ios-clone-platform.preview.emergentagent.com/api
+        Suite: /app/backend_test.py
+
+        ════════════════════════════════════════════════════════
+        A. Premium Support Chat (NEW)  — 17/17 PASS
+        ════════════════════════════════════════════════════════
+        ✅ A1  GET /api/support/thread (fresh user) → thread
+              open, unread_user=0, messages=[], sla_hours=48
+        ✅ A2  POST /api/support/messages → sender=user,
+              read_at=null, body matches
+        ✅ A3  GET /api/support/unread (user) → 0 (own msg
+              doesn't count)
+        ✅ A4  GET /api/admin/support/threads → thread visible,
+              unread_admin_count=1, total_unread_admin=1,
+              open_count>=1, sla_hours=48
+        ✅ A5  GET /api/admin/support/unread → 1
+        ✅ A6  GET /api/admin/support/threads/{user_id} → 200
+              with messages; auto-decrements admin unread to 0
+        ✅ A7  POST /api/admin/support/threads/{user_id}/reply
+              → sender=admin, body matches
+        ✅ A8  GET /api/support/unread (user) after admin reply
+              → 1
+        ✅ A9  GET /api/support/thread → both messages in
+              chronological order [user, admin]; unread
+              auto-cleared to 0
+        ✅ A10 POST /api/admin/support/threads/{user_id}/close
+              → 200; subsequent /admin/support/threads shows
+              status="closed"
+        ✅ A11 Auth gates: non-admin → /admin/support/threads
+              403; no-token → /support/messages 401
+        ✅ A12 Edge: empty body → 422; 2001-char body → 422
+
+        ════════════════════════════════════════════════════════
+        B. Regression — 11/11 PASS
+        ════════════════════════════════════════════════════════
+        ✅ /withdraw/methods admin → min=1, fee=0,
+                                     admin_unlimited=true
+        ✅ /withdraw/methods user  → min=150000, fee=0.10,
+                                     admin_unlimited=false
+        ✅ POST /withdraw amount=10 (user) → 400 "Minimum
+                                              withdrawal is
+                                              150,000 sats"
+        ✅ /free-forever/status → hash_rate_display="500 GH/s",
+                                  duration_hours=24
+        ✅ /admin/ai/agents → 6 agents
+        ✅ POST /admin/ai/regenerate → 200
+        ✅ /admin/fees/summary → all required keys present
+        ✅ POST /auth/login (admin) → 200
+        ✅ /packages → {packages:[...]}, 11 entries incl
+                       adfree_399
+        ✅ /dashboard (admin) → 200
+        ✅ /ai/ticker → 200
+
+        ════════════════════════════════════════════════════════
+        C. Performance smoke — 4/4 PASS (all <200 ms)
+        ════════════════════════════════════════════════════════
+        ✅ /support/thread          106 ms
+        ✅ /admin/support/threads   153 ms
+        ✅ /support/unread          106 ms
+        ✅ /admin/support/unread    110 ms
+
+        VERDICT: Zero regressions. Premium Support Chat works
+        end-to-end as specified. Auth gates and edge cases all
+        return the expected status codes.
+
+        NOTE: /api/packages returns {"packages":[...]}, not a
+        raw array — content is correct (11 pkgs incl
+        adfree_399). Test harness handles both shapes.
+

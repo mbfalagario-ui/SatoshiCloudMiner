@@ -13,6 +13,7 @@ export default function Profile() {
   const { user, signOut, refresh } = useSession();
   const [autoCheckin, setAutoCheckin] = useState(true);
   const [autoReinvest, setAutoReinvest] = useState(false);
+  const [supportUnread, setSupportUnread] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -22,6 +23,22 @@ export default function Profile() {
         setAutoReinvest(!!r.auto_reinvest);
       } catch {}
     })();
+  }, []);
+
+  // Poll the unread support badge — cheap endpoint, light interval.
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const r = await api('/support/unread');
+        if (mounted) setSupportUnread(Number(r?.unread_user_count || 0));
+      } catch {
+        /* quiet */
+      }
+    };
+    load();
+    const t = setInterval(load, 20_000);
+    return () => { mounted = false; clearInterval(t); };
   }, []);
 
   const toggle = async (k: 'auto_checkin' | 'auto_reinvest', v: boolean) => {
@@ -34,11 +51,18 @@ export default function Profile() {
     }
   };
 
-  const items: { icon: any; label: string; to?: string; testID: string; onPress?: () => void }[] = [
+  const items: { icon: any; label: string; to?: string; testID: string; onPress?: () => void; badge?: number }[] = [
     { icon: 'hardware-chip-outline', label: 'My miners', to: '/machines', testID: 'profile-miners' },
     { icon: 'time-outline', label: 'Transaction history', to: '/transactions', testID: 'profile-history' },
     { icon: 'gift-outline', label: 'Daily check-in', to: '/daily', testID: 'profile-daily' },
     { icon: 'people-outline', label: 'Invite friends', to: '/referral', testID: 'profile-referral' },
+    {
+      icon: 'chatbubbles',
+      label: 'Premium Support',
+      to: '/support',
+      testID: 'profile-premium-support',
+      badge: supportUnread,
+    },
     {
       icon: 'document-text-outline',
       label: 'Terms of Service',
@@ -50,16 +74,6 @@ export default function Profile() {
       label: 'Privacy Policy',
       to: '/legal?doc=privacy',
       testID: 'profile-privacy',
-    },
-    {
-      icon: 'mail-outline',
-      label: 'Contact support',
-      testID: 'profile-support',
-      onPress: () =>
-        notify(
-          'Contact support',
-          'Reach us at support@satoshicloudminer.app — we typically respond within 24 hours.'
-        ),
     },
   ];
 
@@ -116,6 +130,11 @@ export default function Profile() {
                 <Ionicons name={it.icon} size={18} color={colors.text} />
               </View>
               <Text style={styles.menuLabel}>{it.label}</Text>
+              {it.badge && it.badge > 0 ? (
+                <View style={styles.menuBadge}>
+                  <Text style={styles.menuBadgeText}>{it.badge > 99 ? '99+' : it.badge}</Text>
+                </View>
+              ) : null}
               <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
             </TouchableOpacity>
           ))}
@@ -175,7 +194,7 @@ export default function Profile() {
           <Text style={styles.logoutText}>Sign out</Text>
         </TouchableOpacity>
 
-        <Text style={styles.appVersion}>Satoshi Cloud Miner v1.0.0 (14)</Text>
+        <Text style={styles.appVersion}>Satoshi Cloud Miner v1.0.0 (15)</Text>
         <Text style={styles.disclaimer}>
           Satoshi Cloud Miner is a cloud computing simulation and monitoring tool. It is not a financial,
           investment, or trading platform. Outcomes depend on server status and operational
@@ -249,6 +268,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   menuLabel: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '600' },
+  menuBadge: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 6,
+    borderRadius: 11,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.xs,
+  },
+  menuBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
   menuSub: { color: colors.textTertiary, fontSize: 11, marginTop: 2 },
   sectionLabel: { color: colors.textSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 1.4, marginTop: spacing.lg, marginBottom: spacing.sm },
   adminBtn: {

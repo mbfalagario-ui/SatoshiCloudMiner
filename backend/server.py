@@ -319,6 +319,18 @@ class AdminFeesReinvestRequest(BaseModel):
     note: Optional[str] = None
 
 
+class SupportSendRequest(BaseModel):
+    """User → admin support message. Build #15."""
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class AdminSupportReplyRequest(BaseModel):
+    """Admin → user support reply. Build #15."""
+    body: str = Field(min_length=1, max_length=2000)
+    user_id: Optional[str] = None      # not used; path param takes priority
+    close_thread: Optional[bool] = False
+
+
 # ---------------------------- Helpers ----------------------------
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -1208,6 +1220,247 @@ async def free_forever_activate(current_user: Dict[str, Any] = Depends(get_curre
         "machine_id": machine["id"],
         "status": _free_forever_state(user or current_user),
     }
+
+
+# ---------------------------- Routes: Premium Support Chat (Build #15) ----------------------------
+# A simple two-party chat: every regular user has at most ONE support thread
+# with the operator. Messages go into `db.support_messages`; per-thread
+# metadata (last activity, status, unread counts) lives in `db.support_threads`.
+SUPPORT_REPLY_SLA_HOURS = 48
+
+
+async def _support_get_or_create_thread(user_id: str, user_email: str) -> Dict[str, Any]:
+    existing = await db.support_threads.find_one({"user_id": user_id}, {"_id": 0})
+    if existing:
+        return existing
+    now = now_utc().isoformat()
+    thread = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "user_email": user_email,
+        "status": "open",                          # open | closed
+        "created_at": now,
+        "last_message_at": None,
+        "last_message_preview": None,
+        "last_message_from": None,                 # 'user' | 'admin'
+        "unread_user_count": 0,                    # admin → user not yet read by user
+        "unread_admin_count": 0,                   # user → admin not yet read by admin
+    }
+    await db.support_threads.insert_one(thread.copy())
+    return thread
+
+
+async def _support_serialize_messages(thread_id: str, limit: int = 200) -> List[Dict[str, Any]]:
+    cursor = db.support_messages.find({"thread_id": thread_id}, {"_id": 0}).sort("created_at", 1)
+    return await cursor.to_list(limit)
+
+
+@api.get("/support/thread")
+async def support_get_thread(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Fetch the signed-in user's thread + all messages. Auto-marks any
+    unread admin → user messages as read."""
+    thread = await _support_get_or_create_thread(current_user["id"], current_user["email"])
+    msgs = await _support_serialize_messages(thread["id"])
+    # mark admin→user messages as read (the user just opened the chat)
+    if thread.get("unread_user_count", 0) > 0:
+        await db.support_threads.update_one(
+            {"id": thread["id"]},
+            {"$set": {"unread_user_count": 0}},
+        )
+        await db.support_messages.update_many(
+            {"thread_id": thread["id"], "sender": "admin", "read_at": None},
+            {"$set": {"read_at": now_utc().isoformat()}},
+        )
+        thread["unread_user_count"] = 0
+    return {
+        "thread": thread,
+        "messages": msgs,
+        "sla_hours": SUPPORT_REPLY_SLA_HOURS,
+    }
+
+
+@api.get("/support/unread")
+async def support_unread(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Cheap polling endpoint used to badge the Profile menu entry."""
+    thread = await db.support_threads.find_one({"user_id": current_user["id"]}, {"_id": 0})
+    return {"unread_user_count": int((thread or {}).get("unread_user_count", 0))}
+
+
+@api.post("/support/messages")
+async def support_send_message(
+    payload: SupportSendRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+
+    thread = await _support_get_or_create_thread(current_user["id"], current_user["email"])
+    now = now_utc().isoformat()
+    msg = {
+        "id": str(uuid.uuid4()),
+        "thread_id": thread["id"],
+        "user_id": current_user["id"],            # who the thread belongs to
+        "sender": "user",                         # 'user' | 'admin'
+        "sender_email": current_user["email"],
+        "body": body[:2000],
+        "created_at": now,
+        "read_at": None,
+    }
+    await db.support_messages.insert_one(msg.copy())
+
+    # Bump thread metadata. Admin's unread count grows; if thread was closed,
+    # reopen it so the operator console picks it up again.
+    await db.support_threads.update_one(
+        {"id": thread["id"]},
+        {
+            "$set": {
+                "last_message_at": now,
+                "last_message_preview": body[:140],
+                "last_message_from": "user",
+                "status": "open",
+            },
+            "$inc": {"unread_admin_count": 1},
+        },
+    )
+    return {"ok": True, "message": msg}
+
+
+# ---------------------------- Routes: Admin (Support) ----------------------------
+@api.get("/admin/support/threads")
+async def admin_support_threads(current_admin: Dict[str, Any] = Depends(get_current_admin)):
+    """Operator inbox — all support threads, newest activity first.
+
+    `status_filter` query param: 'open' (default), 'closed', or 'all'."""
+    cursor = db.support_threads.find({}, {"_id": 0}).sort("last_message_at", -1)
+    threads = await cursor.to_list(500)
+    # Soft-sort: threads with last_message_at=None go to the bottom.
+    threads.sort(key=lambda t: t.get("last_message_at") or "", reverse=True)
+    total_unread = sum(int(t.get("unread_admin_count", 0)) for t in threads)
+    open_count = sum(1 for t in threads if t.get("status", "open") == "open")
+    return {
+        "threads": threads,
+        "total_unread_admin": total_unread,
+        "open_count": open_count,
+        "sla_hours": SUPPORT_REPLY_SLA_HOURS,
+    }
+
+
+@api.get("/admin/support/unread")
+async def admin_support_unread(current_admin: Dict[str, Any] = Depends(get_current_admin)):
+    """Cheap polling endpoint used to badge the Operator Console."""
+    pipeline = [{"$group": {"_id": None, "n": {"$sum": {"$ifNull": ["$unread_admin_count", 0]}}}}]
+    agg = await db.support_threads.aggregate(pipeline).to_list(1)
+    return {"unread_admin_count": int((agg[0] if agg else {}).get("n", 0))}
+
+
+@api.get("/admin/support/threads/{user_id}")
+async def admin_support_thread_detail(
+    user_id: str,
+    current_admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "hashed_password": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    thread = await db.support_threads.find_one({"user_id": user_id}, {"_id": 0})
+    if not thread:
+        # auto-create so the operator can open a brand-new conversation
+        thread = await _support_get_or_create_thread(user_id, user.get("email") or user_id)
+    msgs = await _support_serialize_messages(thread["id"])
+
+    # Opening the thread in the operator console marks all user→admin
+    # messages as read so the badge doesn't keep counting them.
+    if thread.get("unread_admin_count", 0) > 0:
+        await db.support_threads.update_one(
+            {"id": thread["id"]},
+            {"$set": {"unread_admin_count": 0}},
+        )
+        await db.support_messages.update_many(
+            {"thread_id": thread["id"], "sender": "user", "read_at": None},
+            {"$set": {"read_at": now_utc().isoformat()}},
+        )
+        thread["unread_admin_count"] = 0
+    return {
+        "thread": thread,
+        "messages": msgs,
+        "user": user,
+        "sla_hours": SUPPORT_REPLY_SLA_HOURS,
+    }
+
+
+@api.post("/admin/support/threads/{user_id}/reply")
+async def admin_support_reply(
+    user_id: str,
+    payload: AdminSupportReplyRequest,
+    current_admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Reply cannot be empty.")
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    thread = await _support_get_or_create_thread(user_id, user.get("email") or user_id)
+
+    now = now_utc().isoformat()
+    msg = {
+        "id": str(uuid.uuid4()),
+        "thread_id": thread["id"],
+        "user_id": user_id,
+        "sender": "admin",
+        "sender_email": current_admin["email"],
+        "body": body[:2000],
+        "created_at": now,
+        "read_at": None,
+    }
+    await db.support_messages.insert_one(msg.copy())
+
+    update_set: Dict[str, Any] = {
+        "last_message_at": now,
+        "last_message_preview": body[:140],
+        "last_message_from": "admin",
+    }
+    if payload.close_thread:
+        update_set["status"] = "closed"
+    await db.support_threads.update_one(
+        {"id": thread["id"]},
+        {
+            "$set": update_set,
+            "$inc": {"unread_user_count": 1},
+        },
+    )
+
+    # Write to the audit log so admin replies appear in /admin/audit.
+    await db.admin_audit.insert_one({
+        "id": str(uuid.uuid4()),
+        "admin_id": current_admin["id"],
+        "admin_email": current_admin["email"],
+        "action": "support_reply",
+        "target_user_id": user_id,
+        "thread_id": thread["id"],
+        "message_id": msg["id"],
+        "preview": body[:140],
+        "closed_thread": bool(payload.close_thread),
+        "created_at": now,
+    })
+
+    return {"ok": True, "message": msg}
+
+
+@api.post("/admin/support/threads/{user_id}/close")
+async def admin_support_close(
+    user_id: str,
+    current_admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    """Close a thread without sending a message (e.g. resolved internally)."""
+    thread = await db.support_threads.find_one({"user_id": user_id}, {"_id": 0})
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found.")
+    await db.support_threads.update_one(
+        {"id": thread["id"]},
+        {"$set": {"status": "closed", "closed_at": now_utc().isoformat()}},
+    )
+    return {"ok": True}
 
 
 # ---------------------------- Routes: Admin ----------------------------
