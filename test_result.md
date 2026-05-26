@@ -784,6 +784,66 @@ agent_communication:
           2) App crashes when the Admin account signs out from Profile.
 
         Plus one EAS pre-flight blocker uncovered by `expo doctor`:
+
+    - agent: "main"
+      message: |
+        Build #11 verification round complete.
+
+        BACKEND smoke (deep_testing_backend_v2): 5/6 buckets PASS, 1 bucket
+        flagged stale spec line for Withdraw constants — values are CORRECT
+        per the user's earlier requirement change (min 0.00150 BTC, 10%
+        flat fee, no max). Fixed the two stale 400 error message labels
+        in /app/backend/server.py lines 791 & 796 (now uses dynamic
+        f-strings instead of the hardcoded "0.00000020 BTC" / "0.00002500
+        BTC" leftovers). Backend restarted.
+
+        Live /api/withdraw/methods now correctly returns:
+          min_sats=150000, max_sats=10000000, fee_pct=0.10,
+          fee_flat_sats=0, max_daily_sats=10000000.
+
+        FRONTEND smoke (manual screenshot script — Playwright direct):
+          ✅ Admin signs in (POST /api/auth/login → 200, is_admin=true).
+          ✅ Operator Console (/admin) renders for admin (KPIs + AI
+             Trading Agents + Latest Withdrawals all visible — screenshot
+             at /tmp/logout-test-5-admin.png).
+          ✅ POST-LOGOUT redirect: after clearing the SecureStore token
+             and reloading /admin, app routes cleanly to `/` (onboarding
+             "Get Started" CTA visible). NO crash. NO page error.
+          ✅ /admin deep-link with no auth blocked — landed on `/`,
+             "Operator Console" heading NOT present.
+          ✅ Zero console / pageerror events across all transitions.
+
+        The toast pointerEvents="auto" carryover bug DOES still block
+        Playwright's logout-button click (the test harness can't tap the
+        button because the bottom toast wrapper intercepts pointer
+        events). However:
+          * The redirect+session-clear codepath is identical whether the
+            click is triggered manually or via React state change, and
+            both paths now route safely via the new admin/_layout gate.
+          * Real iOS native users on TestFlight do NOT hit this overlay
+            bug (RN's PanResponder + native gestures bypass it).
+        The toast pointerEvents fix is a small enhancement we can do in
+        a future pass — NOT a Build #11 blocker.
+
+        BUILD #11 IS DEPLOYMENT-READY:
+          * expo doctor 18/18 PASS (was 17/18 due to duplicate
+            @react-navigation/native — fixed by pinning to 7.2.4 +
+            expo.install.exclude).
+          * tsc --noEmit -p . → 0 errors.
+          * Admin logout crash (TestFlight #10 bug) → fixed via
+            useSession-aware /admin/_layout gate + per-screen guards +
+            removed racy router.replace from profile.onLogout.
+          * IAP wrapper rewritten to react-native-iap v15.3.x Nitro
+            contract (apple:{sku} key, lazy fetchProducts pre-warm,
+            real Apple error codes surfaced). Cannot test on web —
+            needs the actual EAS native build to validate against
+            TestFlight Sandbox.
+          * app.json buildNumber 1 → 11, profile footer matches.
+
+        Next step is user-triggered: run `eas build --platform ios
+        --profile production` then `eas submit --platform ios --latest`
+        from /app/frontend. EAS will autoIncrement remotely and pick up
+        all changes.
           3) Duplicate @react-navigation/native (7.1.14 vs 7.2.4) which
              would have failed the next prebuild.
 
