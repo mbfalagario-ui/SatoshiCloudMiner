@@ -1,35 +1,27 @@
-Satoshi Cloud Miner 1.0.0 — Build #13 (Free Forever plan + Admin AI controls + Logout fix)
+Satoshi Cloud Miner 1.0.0 — Build #14 (Operator unlimited withdrawal)
 
 What's new in this build:
 
-NEW — Free Forever mining plan
-- Every user can now activate a complimentary 500 GH/s mining plan once
-  every 24 hours, right from the Home dashboard.
-- Tap "Activate Free Plan" to start a 24-hour cycle. While it's running you
-  see a live "Plan resets in HH:MM:SS" countdown; once the timer hits zero
-  the activation button comes back automatically.
-
-NEW — Operator Console enhancements
-- AI Trading Agents are now editable: operators can tap any agent to nudge
-  its daily %, win rate, and signal strength, and there's a "Regenerate"
-  button that replaces today's snapshot with a fresh randomized one.
-- Commission Fees Pool card shows total withdrawal commission collected,
-  what's already been reinvested, and the unreinvested balance. A single
-  tap on "Reinvest" credits the available pool to the operator's balance
-  and logs the action in the audit trail.
-
-FIXED — Sign-out routing
-- Sign-out now navigates to the welcome screen immediately and reliably.
-  Build #12's deferred-redirect could occasionally leave the screen black
-  on certain iOS versions; that path has been replaced with a direct
-  router.replace from inside the auth context so the auth screen mounts
-  before any state teardown.
+NEW — Operator unlimited withdrawal
+- Admin operators now see a dedicated "OPERATOR — withdraw any amount · 0%
+  fee" badge on the Wallet tab and can drain any balance amount to a
+  Lightning invoice/address at 0% commission with no per-transaction
+  minimum. All other users continue to operate under the standard
+  150,000 sats minimum + 10% flat network fee.
+- The backend treats this as a privileged path tied to is_admin=true and
+  records the action in the operator audit log just like every other
+  admin action.
 
 Previous changes still in place:
+- Free Forever 24-hour complimentary mining plan (500 GH/s, one
+  activation per 24h, live countdown on Home).
+- Operator Console with editable AI Trading Agents, daily snapshot
+  regeneration, and one-tap commission-fee reinvestment.
+- Stable sign-out routing — auth screen mounts before session state
+  teardown, no black-screen edge cases.
 - Real Apple In-App Purchase via StoreKit 2 for all 10 mining plans and
   the Ad-Free $3.99 tier.
-- Lightning withdrawals (BOLT11 + Lightning Address) with 150,000 sats
-  minimum, 10% flat fee.
+- Lightning withdrawals (BOLT11 + Lightning Address).
 - Server-side daily check-in cron and optional auto-reinvest.
-- AI Trading Agents simulation with daily P&L + win-rate per strategy.
+- AI Trading Agents simulation with daily P&L + win-rate.
 - AI market commentary ticker refreshed daily.
