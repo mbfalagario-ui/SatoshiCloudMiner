@@ -21,6 +21,9 @@
     "production": {
       "autoIncrement": true,
       "credentialsSource": "local",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://ios-clone-platform.preview.emergentagent.com"
+      },
       "ios": {
         "resourceClass": "m-medium"
       }

@@ -1,6 +1,10 @@
 import { storage } from '@/src/utils/storage';
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+// Fallback so the app keeps working even if EXPO_PUBLIC_BACKEND_URL isn't
+// baked into the build (this caused the "Invalid URL: /api/auth/login"
+// crash on TestFlight build #9).
+const FALLBACK_BACKEND = 'https://ios-clone-platform.preview.emergentagent.com';
+const BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || FALLBACK_BACKEND).replace(/\/$/, '');
 const TOKEN_KEY = 'hc_access_token';
 
 export async function saveToken(token: string) {
