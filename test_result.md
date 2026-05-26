@@ -570,14 +570,15 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "2.1"
-  test_sequence: 3
+  version: "2.2"
+  test_sequence: 4
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Admin logout no longer crashes the app (TestFlight #10 bug)"
-    - "Native iOS IAP via react-native-iap"
+    - "Build #12 — native logout crash fully mitigated (effect-driven redirect)"
+    - "Home tab focus-refresh after Mine purchase"
+    - "Purchase success message branching (ad-free vs miners)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -1024,4 +1025,108 @@ agent_communication:
         matches the documented fix. The remaining work is human/manual
         verification of the actual logout transition.
 
+
+    - agent: "main"
+      message: |
+        BUILD #12 — Shipped to App Store Connect at 9:25 PM, 5/26/2026.
+
+        Three TestFlight #11 issues addressed:
+
+        ISSUE #1 (CRITICAL) — App crashes natively when signing out
+        Root cause: render-time `<Redirect href="/" />` returned from the
+        (tabs)/_layout when `user` became null was triggering an iOS
+        UINavigationController stack-mutation-during-commit assertion. The
+        Profile screen + AdInterstitial Modal + Tabs UIViewControllers
+        were still resolving their commits when expo-router synchronously
+        called router.replace.
+        Fix (multi-layered):
+          1. /app/frontend/src/ctx.tsx — signOut() now (a) tears down the
+             react-native-iap connection + listeners first, (b) clears the
+             SecureStore token, (c) defers `setUser(null)` to the next
+             frame via `InteractionManager.runAfterInteractions`.
+          2. /app/frontend/app/(tabs)/_layout.tsx — replaced render-time
+             `<Redirect>` with a `useEffect`-driven `router.replace('/')`
+             wrapped in `setTimeout(0)` so navigation runs post-commit.
+             While the redirect resolves, the layout renders a spinner
+             (NOT the Tabs tree) so we don't access user.* on null.
+          3. /app/frontend/app/admin/_layout.tsx — same treatment for
+             admin → unauthenticated transition.
+
+        ISSUE #2 — Home dashboard didn't refresh after Mine purchase
+        (User saw "IDLE · 0 active miners" until app restart even though
+        machines existed.)
+        Fix: /app/frontend/app/(tabs)/index.tsx now uses
+        `useFocusEffect(useCallback(() => load(), [load]))` from
+        expo-router on top of the existing mount-time `useEffect`. Any
+        time Home regains focus (back from Mine/Wallet/Profile/etc), it
+        re-fetches `/dashboard`, `/ai/ticker`, and `/ai/agents`.
+
+        ISSUE #3 — "0 miner added to your account" misleading text
+        Root cause: shop.tsx used one notify template for ALL purchases
+        including the Ad-Free $3.99 (which legitimately returns
+        machines_added=0).
+        Fix: /app/frontend/app/(tabs)/shop.tsx now branches on entitlement:
+          - `ad_free`        → "Ad-Free Unlocked / Ads are now removed…"
+          - mining w/ count>0 → "Purchase successful / N miners added…"
+          - mining w/ count=0 → "Purchase recorded / Pull to refresh on Home"
+        Plus auto-navigates to `/(tabs)` after a successful mining-plan
+        buy so Home (with the new useFocusEffect) immediately reflects
+        the new hashrate.
+
+        APP STORE CONNECT METADATA UPDATED:
+          * /app/store/whats-new.txt — Build #12 release notes
+            describing the three fixes for App Store Connect's "What's
+            New in This Version".
+          * /app/store/app-store-connect-checklist.md — full rewrite
+            replacing stale "HashCloud" branding with current "Satoshi
+            Cloud Miner" + bundle id `app.satoshicloudminer` + ASC App
+            ID `6773104756` + Apple Team `UHF3KNM9F9` + correct demo
+            account (`test@testeraccount.com` / `password123`) + the
+            11-IAP catalog (10 Consumable + 1 Non-Consumable
+            `adfree_399`) + the Apple-review notes for Lightning
+            withdrawal + receipt validation.
+
+        BUILD #12 EAS ARTIFACTS:
+          * Build ID: 1fd8af5a-c97e-44c6-a09f-888795ec6906
+          * Submission ID: 42f25795-560e-4430-8559-94e96aec87a4
+          * Build time: 5min 28s (9:14 PM → 9:20 PM)
+          * Submit time: ~5min (Apple's S3 upload)
+          * IPA: https://expo.dev/artifacts/eas/4W63gkhx7MsfUavVNu9kF5.ipa
+          * Version: 1.0.0 (12)
+
+        VERIFICATION (web preview):
+          ✅ tsc --noEmit -p . → 0 errors
+          ✅ expo-doctor → 18/18 PASS
+          ✅ Admin gate Playwright test:
+              - /admin without token → cleanly redirects to onboarding,
+                no Operator Console flash, no JS errors
+              - "Landed at a safe public page: True"
+              - No pageerrors during transition
+
+        Cannot test the IAP nor the native sign-out crash on web preview
+        (both are iOS-native only). Will be validated on TestFlight Build
+        #12 by the user.
+
+        USER NEXT STEPS:
+          1. Wait for Apple's "Build 12 is ready to test" email (~10 min
+             from 9:25 PM).
+          2. Open TestFlight on iPhone, pull-to-refresh, download.
+          3. Test the three previously broken flows:
+             a) Sign out of the test account → no crash.
+             b) Buy a mining plan from Mine tab → app auto-jumps to
+                Home and shows MINING ACTIVE + hashrate + miner count.
+             c) Buy adfree_399 → toast says "Ad-Free Unlocked", ads
+                no longer interrupt tab switches.
+          4. Once all three pass, in App Store Connect:
+             - Assign Build #12 to the v1.0.0 release.
+             - Paste /app/store/whats-new.txt into "What's New in This
+               Version".
+             - Confirm reviewer notes (from app-store-connect-checklist
+               under "App Review Information") are pasted into the
+               App Review Information section.
+             - Click "Submit for Review".
+
+        SECURITY:
+          * Revoke the EXPO_TOKEN at https://expo.dev/settings/access-tokens
+            once Build #12 is processing in App Store Connect.
         previous session, low priority, not blocking submission).

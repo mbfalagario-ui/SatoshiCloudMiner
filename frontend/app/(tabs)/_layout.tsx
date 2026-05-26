@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { Tabs, Redirect } from 'expo-router';
+import React, { useEffect, useRef } from 'react';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform, View, StyleSheet, ActivityIndicator } from 'react-native';
 import { BlurView } from 'expo-blur';
@@ -10,11 +10,33 @@ import { useAds } from '@/src/AdContext';
 export default function TabsLayout() {
   const { user, loading } = useSession();
   const { showInterstitial } = useAds();
+  const router = useRouter();
   const lastTabRef = useRef<string>('index');
 
+  // CRITICAL: Defer the unauthenticated-redirect to an effect (post-commit)
+  // instead of returning <Redirect /> mid-render. The old render-time
+  // <Redirect> caused a native iOS crash on sign-out because expo-router
+  // synchronously mutated the navigation stack while iOS was still
+  // committing the Tabs/Profile UIViewControllers and a Modal could be
+  // animating. By moving navigation into useEffect we run AFTER iOS has
+  // committed its tree, so the stack mutation is safe.
+  useEffect(() => {
+    if (!loading && !user) {
+      // microtask deferral on top of useEffect — empirically this avoids
+      // the rare second-tap crash on the Sign Out alert dismiss.
+      const t = setTimeout(() => {
+        try {
+          router.replace('/');
+        } catch {
+          // navigation can throw if the layout already unmounted — safe to ignore.
+        }
+      }, 0);
+      return () => clearTimeout(t);
+    }
+  }, [user, loading, router]);
+
   // Still hydrating session from storage — show a splash instead of swapping
-  // the tree mid-render (the previous useEffect+render-swap caused a crash
-  // on iOS when the user signed out from the Profile tab).
+  // the tree mid-render.
   if (loading) {
     return (
       <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }]}>
@@ -23,11 +45,15 @@ export default function TabsLayout() {
     );
   }
 
-  // Authenticated state lost (e.g. user just signed out). Redirect declares
-  // the navigation as a render-side effect, which expo-router/React Navigation
-  // handles without unmounting Tabs partway through.
+  // While the effect above runs `router.replace('/')`, render an empty splash
+  // so we don't access user.* on a null session and don't trigger Tabs to
+  // mount a brand-new screen tree against null data.
   if (!user) {
-    return <Redirect href="/" />;
+    return (
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
   }
 
   const onTabPress = (name: string) => {

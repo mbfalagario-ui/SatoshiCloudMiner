@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSession } from '@/src/ctx';
 import { api } from '@/src/utils/api';
@@ -81,6 +81,16 @@ export default function Home() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Re-fetch dashboard data whenever the Home tab regains focus. This is the
+  // fix for the Build #11 TestFlight report: after the user bought miners on
+  // the Mine tab, returning to Home still showed "IDLE · 0 active miners"
+  // until the app was restarted, because Home's useEffect only ran on mount.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   // Ticking live earnings every second (visual only)
   useEffect(() => {

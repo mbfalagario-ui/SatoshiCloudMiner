@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { api } from '@/src/utils/api';
 import { colors, spacing, radius, fonts, shadows, media, fmtUsd } from '@/src/utils/theme';
 import { useSession } from '@/src/ctx';
@@ -39,6 +40,7 @@ type Pkg = {
 
 export default function Shop() {
   const { refresh } = useSession();
+  const router = useRouter();
   const [pkgs, setPkgs] = useState<Pkg[]>([]);
   const [loading, setLoading] = useState(true);
   const [buyingId, setBuyingId] = useState<string | null>(null);
@@ -101,10 +103,38 @@ export default function Shop() {
             body: JSON.stringify(body),
           });
           await refresh();
-          notify(
-            'Purchase successful',
-            `${r.machines_added} miner${r.machines_added > 1 ? 's' : ''} added to your account.`
-          );
+
+          // Branch the success message based on what was actually purchased.
+          // Ad-Free → no miners are added; show the "Ads removed" copy.
+          // Mining plans → show the miner-count copy (handles BOGO bonuses).
+          // machines_added === 0 with no ad_free entitlement means the
+          //   transaction was already redeemed by the backend's idempotent
+          //   path — surface that explicitly instead of saying "0 miner".
+          const isAdFree = pkg.entitlement === 'ad_free' || pkg.id === 'adfree_399';
+          if (isAdFree) {
+            notify(
+              'Ad-Free Unlocked',
+              'Ads are now removed from your experience. Enjoy mining without interruptions.'
+            );
+          } else if ((r.machines_added ?? 0) > 0) {
+            const count = r.machines_added as number;
+            notify(
+              'Purchase successful',
+              `${count} miner${count > 1 ? 's' : ''} added to your account.`
+            );
+          } else {
+            // Defensive fallback (e.g. backend de-duped this Apple txn).
+            notify(
+              'Purchase recorded',
+              'Your purchase was confirmed. Pull to refresh on Home if you don\'t see your miners yet.'
+            );
+          }
+
+          // Jump back to Home so the user immediately sees their new
+          // hashrate. Home's useFocusEffect will refresh dashboard data.
+          if (!isAdFree && (r.machines_added ?? 0) > 0) {
+            try { router.replace('/(tabs)'); } catch {}
+          }
         } catch (e: any) {
           notify('Purchase failed', e?.message ?? 'Try again.');
         } finally {

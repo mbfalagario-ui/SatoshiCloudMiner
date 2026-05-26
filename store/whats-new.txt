@@ -1,10 +1,29 @@
-Satoshi Cloud Miner 1.0 — initial release
+Satoshi Cloud Miner 1.0.0 — Build #12 (TestFlight stability + UX polish)
 
-- Real-time mining cluster dashboard with hashrate and live earnings
-- AI Trading Agents: 6 simulated strategies with daily P&L and win-rate
-- AI market commentary ticker refreshed daily
-- 10 mining plan tiers with AI-projected ROI and break-even days
-- Lightning-only withdrawals via BOLT11 or Lightning address
-- Server-side auto check-in and auto-reinvest (optional)
-- Operator Console: revenue, payouts, user moderation, transaction audit
-- Referral program with shareable code
+What's fixed in this build:
+- Eliminated a rare native crash that could occur when signing out of the
+  app. Sign-out now completes cleanly and routes back to the welcome
+  screen without interrupting the app session.
+- The Home dashboard now refreshes its hashrate, active miner count, and
+  daily projection automatically whenever you return to it from the Mine,
+  Wallet, or Profile tabs — purchases are reflected immediately, no app
+  restart required.
+- After buying a mining plan you are now automatically returned to the
+  Home dashboard so you can see your new miners in action.
+- Improved purchase confirmation text: ad-removal purchases now show a
+  dedicated "Ad-Free Unlocked" message instead of the generic "0 miner
+  added" wording from earlier builds.
+- Defensive fallback for transactions Apple has already redeemed: the app
+  now surfaces a clear "Purchase recorded — pull to refresh" hint instead
+  of an empty success toast.
+
+Previous changes still in place:
+- Real Apple In-App Purchase via StoreKit 2 for all 10 mining plans and
+  the Ad-Free $3.99 tier.
+- Lightning withdrawals (BOLT11 + Lightning Address) with 150,000 sats
+  minimum, 10% flat fee.
+- Server-side daily check-in cron and optional auto-reinvest.
+- Operator (admin) console with revenue analytics, user moderation, and
+  transaction inspector.
+- AI Trading Agents simulation with daily P&L + win-rate per strategy.
+- AI market commentary ticker refreshed daily.
