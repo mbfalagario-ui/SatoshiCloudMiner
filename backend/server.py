@@ -1102,6 +1102,35 @@ async def download_playbook_pdf():
     )
 
 
+# Individual PRODUCT_SPEC files (so the user can attach them directly).
+@api.get("/downloads/spec_btc.md")
+async def download_spec_btc():
+    p = "/app/store/playbook/specs/PRODUCT_SPEC_Satoshi_Cloud_Miner.md"
+    if not os.path.exists(p):
+        raise HTTPException(status_code=404)
+    return FileResponse(p, media_type="text/markdown",
+                        filename="PRODUCT_SPEC_Satoshi_Cloud_Miner.md")
+
+
+@api.get("/downloads/spec_ltc_doge.md")
+async def download_spec_ltc_doge():
+    p = "/app/store/playbook/specs/PRODUCT_SPEC_LTC_DOGE_Cloud_Miner.md"
+    if not os.path.exists(p):
+        raise HTTPException(status_code=404)
+    return FileResponse(p, media_type="text/markdown",
+                        filename="PRODUCT_SPEC_LTC_DOGE_Cloud_Miner.md")
+
+
+# Single bundle ZIP — playbook PDF + both specs + README in one click.
+@api.get("/downloads/bundle.zip")
+async def download_bundle_zip():
+    p = "/app/store/playbook/Ship_A_Clone_Bundle.zip"
+    if not os.path.exists(p):
+        raise HTTPException(status_code=404)
+    return FileResponse(p, media_type="application/zip",
+                        filename="Ship_A_Clone_Bundle.zip")
+
+
 @api.get("/ai/agents")
 async def ai_agents():
     """Today's LLM-driven AI Trading Agents snapshot (cached per UTC day)."""
