@@ -831,10 +831,123 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus: []
-  stuck_tasks: []
+  current_focus:
+    - "CRITICAL: Backend SyntaxError on server.py line 1010 blocks Build #16 audit"
+  stuck_tasks:
+    - "CRITICAL: Backend SyntaxError on server.py line 1010 blocks Build #16 audit"
   test_all: false
   test_priority: "high_first"
+
+frontend_build16_audit:
+  - task: "Build #16 FULL FRONTEND AUDIT (admin support header, sign-out flow, etc.)"
+    implemented: true
+    working: false
+    file: "backend/server.py (BLOCKER) + frontend/app/admin/support/*"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: |
+            BLOCKED by backend SyntaxError. Build #16 frontend audit
+            could not be executed because /app/backend/server.py line 1010
+            has a missing newline:
+              @api.post("/daily-checkin", response_model=CheckinResponse)async def daily_checkin(...):
+            The decorator and `async def` are on the same line → uvicorn
+            workers crash on reload with "SyntaxError: invalid syntax"
+            (see /var/log/supervisor/backend.err.log). Although
+            `supervisorctl status` reports backend "RUNNING" (old master
+            PID 169 still holding the port), every HTTP request to
+            http://localhost:8001/api/* times out after 10s (workers
+            died on the WatchFiles reload).
+
+            Concrete impact on the Build #16 frontend test pass
+            (iPhone 14 390x844 viewport + iPad 820x1180):
+              ✅ [T1]  Onboarding renders, "Satoshi Cloud Miner" hero
+                       visible, initial load 1.5s (well under 5s target).
+              ✅ [T2]  /admin while unauthenticated → redirects to
+                       /sign-in, Operator Console NOT rendered.
+              ❌ [T3]  Admin login (mbfalagario@gmail.com /
+                       SCMiner!Adm-9k4Vp2QrZxNb7sLe) → stays on /sign-in,
+                       no JWT issued. Backend POST /api/auth/login never
+                       responds (10s timeout) due to the syntax error.
+              ⛔ [T4]  /admin/support thread header + back/close button
+                       overlap fix — CANNOT BE VERIFIED because admin
+                       cannot authenticate. The Build #15 critical
+                       regression listed in the review_request is
+                       UNVERIFIED in this run.
+              ⛔ [T5]  Operator Console KPIs / AI Trading Agents /
+                       Commission Fees Pool / Support quick-link —
+                       UNVERIFIED (admin login blocked).
+              ⛔ [T6]  Wallet OPERATOR badge — UNVERIFIED.
+              ⛔ [T7]  Mine tab 11 plans incl adfree_399 — UNVERIFIED
+                       (/api/packages times out).
+              ⛔ [T8]  Profile Premium Support / My miners / etc. —
+                       UNVERIFIED.
+              ⛔ [T9]  Admin sign-out crash regression — UNVERIFIED.
+              ✅ [T10] /(tabs)/profile while logged out → redirects to
+                       /sign-in cleanly (no black screen).
+              ✅ [T11] /admin/support while logged out → redirects to
+                       /sign-in (no Operator Console rendered).
+              ⛔ Tablet 820x1180 — UNVERIFIED for the same reason.
+
+            Per the review_request instruction "DO NOT change any files
+            — main agent will action any fixes." I did NOT patch the
+            syntax error. The fix is a one-character change:
+              Line 1010 must split into TWO lines:
+                @api.post("/daily-checkin", response_model=CheckinResponse)
+                async def daily_checkin(current_user: Dict[str, Any] = Depends(get_current_user)):
+            After saving, supervisor will reload uvicorn, /api/auth/login
+            will respond, and the full Build #16 frontend audit can be
+            re-run.
+
+agent_communication:
+    - agent: "testing"
+      message: |
+        BUILD #16 FULL FRONTEND AUDIT — BLOCKED by backend syntax error.
+
+        /app/backend/server.py line 1010 has the route decorator and
+        `async def` on the same line:
+
+            @api.post("/daily-checkin", response_model=CheckinResponse)async def daily_checkin(...):
+
+        uvicorn workers refuse to start (SyntaxError: invalid syntax —
+        see /var/log/supervisor/backend.err.log). Supervisor still
+        reports backend RUNNING (old master PID alive), but every
+        /api/* request times out after 10s, so the frontend cannot
+        authenticate any user — admin or otherwise.
+
+        Tests that could still be executed (no backend needed):
+          ✅ Onboarding loads in 1.5s with "Satoshi Cloud Miner" hero.
+          ✅ /admin while unauthenticated → redirects to /sign-in
+             (does NOT render Operator Console).
+          ✅ /admin/support while unauthenticated → redirects to /sign-in.
+          ✅ /(tabs)/profile while unauthenticated → redirects to /sign-in.
+          ✅ No black screens on the redirect paths.
+          ✅ No console errors on first paint.
+
+        Tests BLOCKED until the syntax error is fixed:
+          ⛔ Admin login → Operator Console
+          ⛔ /admin/support thread header overlap + back/close visibility
+             (Build #15 critical regression — UNVERIFIED)
+          ⛔ Premium Support Chat end-to-end (user ↔ admin)
+          ⛔ Sign-out flow (admin AND regular user)
+          ⛔ Home / Mine / Wallet / Profile content checks
+          ⛔ Operator Console KPIs, AI agents Regenerate, Commission
+             Fees Pool reinvest, Support quick-link unread badge
+          ⛔ Tablet (820x1180) layout check
+
+        DO NOT FIX AGAIN BY ME — per the review_request, main agent
+        will action the fix. The required change is:
+
+            Line 1010 (split into TWO lines):
+              @api.post("/daily-checkin", response_model=CheckinResponse)
+              async def daily_checkin(current_user: Dict[str, Any] = Depends(get_current_user)):
+
+        After fixing, please `sudo supervisorctl restart backend` and
+        re-invoke the testing agent so the full Build #16 frontend
+        audit can be completed.
 
 agent_communication:
     - agent: "main"
