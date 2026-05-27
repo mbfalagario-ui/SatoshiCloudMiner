@@ -1007,7 +1007,8 @@ async def checkin_status(current_user: Dict[str, Any] = Depends(get_current_user
     }
 
 
-@api.post("/daily-checkin", response_model=CheckinResponse)async def daily_checkin(current_user: Dict[str, Any] = Depends(get_current_user)):
+@api.post("/daily-checkin", response_model=CheckinResponse)
+async def daily_checkin(current_user: Dict[str, Any] = Depends(get_current_user)):
     user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
     last = user.get("last_checkin_at")
     now = now_utc()
