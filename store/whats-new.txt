@@ -1,32 +1,29 @@
-Satoshi Cloud Miner 1.0.0 — Build #15 (Premium Support Chat)
+Satoshi Cloud Miner 1.0.0 — Build #16 (Polish + Marketing Campaign)
 
 What's new in this build:
 
-NEW — Premium Support Chat
-- Every user now has a dedicated 1-to-1 support thread with our operator
-  team, reachable from "Premium Support" in the Profile menu.
-- Send a message any time; we reply within 48 hours. Unread admin replies
-  surface as a red badge on Profile → Premium Support so you'll know the
-  moment a reply lands.
-- A clean chat UI with auto-scroll, pull-to-refresh, and a 12-second
-  live refresh while the screen is foregrounded.
+POLISH — Admin support chat (iOS layout fix)
+- Fixed the chat header on the Operator Console support detail so the
+  back and Close buttons are always reachable inside the device safe
+  area. The Build #15 chat detail header was overlapping the status
+  bar on certain iOS layouts; that is now resolved by reading the
+  iOS safe-area insets directly inside the modal and padding the
+  header accordingly.
 
-NEW — Operator Console: Support inbox
-- A new "Support" quick-link inside the Operator Console shows every
-  open thread, with unread counts and a 48h SLA reminder up top.
-- Tap a thread to read the full conversation and reply inline; closing
-  a thread is a single tap. Every operator reply is recorded in the
-  admin audit log.
+NEW — Refreshed App Store branding
+- Brand-new App Store icon, hero banner, three feature slides, and a
+  closing call-to-action — all designed around our circuit-board ₿
+  motif on a deep navy background.
+- Updated 28-second App Preview video assembled from those banners
+  for the App Store product page (1080×1920, H.264, silent).
 
 Previous changes still in place:
-- Operator unlimited withdrawal at 0% fee (badge visible on Wallet tab
-  for admin accounts; regular users continue under the 150k sats min +
-  10% flat fee).
-- Free Forever 24-hour complimentary mining plan with live countdown.
-- Editable AI Trading Agents, snapshot regeneration, one-tap commission
-  fee reinvestment.
+- Premium Support Chat with 48-hour SLA, inbox in Operator Console
+- Operator unlimited withdrawal at 0% fee
+- Free Forever 24-hour complimentary mining plan
+- Editable AI Trading Agents + snapshot regenerate + commission fee
+  reinvestment
 - Real Apple In-App Purchase via StoreKit 2 for all 10 mining plans
-  plus the Ad-Free $3.99 tier.
-- Lightning withdrawals (BOLT11 + Lightning Address).
-- Stable sign-out routing.
-- AI Trading Agents simulation + daily AI market commentary ticker.
+  + the Ad-Free $3.99 tier
+- Lightning withdrawals (BOLT11 + Lightning Address)
+- AI Trading Agents simulation + daily AI market commentary ticker
