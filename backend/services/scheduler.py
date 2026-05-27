@@ -47,6 +47,7 @@ def start_jobs(
     auto_checkin: Callable[..., Awaitable[Any]],
     auto_reinvest: Callable[..., Awaitable[Any]],
     refresh_agents: Callable[..., Awaitable[Any]],
+    auto_ship: Optional[Callable[..., Awaitable[Any]]] = None,
 ) -> None:
     s = get_scheduler()
     if s.running:
@@ -55,6 +56,11 @@ def start_jobs(
     s.add_job(_safe(auto_checkin), IntervalTrigger(hours=1), id="auto_checkin", replace_existing=True)
     s.add_job(_safe(auto_reinvest), IntervalTrigger(hours=2), id="auto_reinvest", replace_existing=True)
     s.add_job(_safe(refresh_agents), CronTrigger(hour=0, minute=5), id="refresh_agents", replace_existing=True)
+    if auto_ship is not None:
+        # Poll App Store Connect every 30 minutes. The tick is idempotent —
+        # it no-ops until the main 1.0 version is approved.
+        s.add_job(_safe(auto_ship), IntervalTrigger(minutes=30), id="auto_ship",
+                  replace_existing=True, next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30))
     s.start()
     logger.info("Background scheduler started.")
 
