@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -1086,6 +1087,19 @@ async def ai_ticker():
 @api.get("/system/btc_rate")
 async def system_btc_rate():
     return btc_rate_mod.rate_info()
+
+
+# Static download — Foolproof iOS Clone Prompts Playbook PDF.
+@api.get("/downloads/playbook.pdf")
+async def download_playbook_pdf():
+    p = "/app/store/playbook/Foolproof_iOS_Clone_Prompts_Playbook.pdf"
+    if not os.path.exists(p):
+        raise HTTPException(status_code=404, detail="Playbook not generated yet")
+    return FileResponse(
+        p,
+        media_type="application/pdf",
+        filename="Foolproof_iOS_Clone_Prompts_Playbook.pdf",
+    )
 
 
 @api.get("/ai/agents")
