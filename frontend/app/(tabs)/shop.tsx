@@ -136,7 +136,13 @@ export default function Shop() {
             try { router.replace('/(tabs)'); } catch {}
           }
         } catch (e: any) {
-          notify('Purchase failed', e?.message ?? 'Try again.');
+          // Friendlier headline when Apple hasn't approved the IAP yet
+          // (the very first launch of a brand new app version on TestFlight
+          // or App Store always hits this until Apple finishes reviewing
+          // the IAPs alongside the binary).
+          const friendlyTitle =
+            e?.code === 'E_PRODUCT_NOT_AVAILABLE' ? 'Coming soon' : 'Purchase failed';
+          notify(friendlyTitle, e?.message ?? 'Try again.');
         } finally {
           setBuyingId(null);
         }

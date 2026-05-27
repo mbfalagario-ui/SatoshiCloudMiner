@@ -568,6 +568,114 @@ frontend:
               python /app/store/screenshots/capture.py \
                 --base $EXPO_PUBLIC_BACKEND_URL
 
+backend_build18:
+  - task: "Build #18 — Backend regression (btc_rate, LLM agents, regenerate, 10 packages)"
+    implemented: true
+    working: true
+    file: "backend/server.py + backend/integrations/btc_rate.py + backend/integrations/ai.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            Build #18 backend regression executed via
+            /app/backend_test_build18.py against
+            https://ios-clone-platform.preview.emergentagent.com/api.
+            RESULT: 25/25 PASS, 0 FAIL.
+
+            ====== NEW (Build #18) ======
+            ✅ 1  GET /api/system/btc_rate (public, no auth) →
+                  HTTP 200, btc_usd=75747.98, source="coinbase",
+                  fetched_at + age_seconds present. Rate in
+                  sanity range (1000..1000000). NOTE: CoinGecko
+                  is currently 429 rate-limited from this host;
+                  the secondary fallback (Coinbase) is supplying
+                  the rate — expected behaviour, source field
+                  correctly reports "coinbase".
+            ✅ 2a GET /api/ai/agents (public) → 6 agents,
+                  all six expected ids (agent_arbiter, helios,
+                  orbital, quasar, voltage, sentinel). Every
+                  agent has id, name, strategy, baseline_pct,
+                  daily_pct (in -0.15..0.15), win_rate (in
+                  0.5..0.95), signal_strength, status, action,
+                  commentary (non-empty), ai_generated=True
+                  on ALL six (LLM path active).
+            ✅ 2b Second hit returned identical snapshot for
+                  today's UTC date (date=2026-05-27,
+                  daily_pct + win_rate match exactly) — caching
+                  is idempotent.
+            ✅ 3a POST /api/admin/ai/regenerate (admin auth) →
+                  HTTP 200, 6 agents re-rolled, schema valid,
+                  ai_generated=True on all six.
+            ✅ 3b Response includes regenerated_by_admin =
+                  "mbfalagario@gmail.com".
+            ✅ 4a GET /api/packages → exactly 10 packages
+                  (was 11 in prior builds).
+            ✅ 4b No package with id=="starter_099" — removed.
+            ✅ 4c Order matches spec exactly:
+                  welcome_199, rookie_299, pro_499, elite_999,
+                  ultra_1999, mega_4999, giga_9999, titan_14999,
+                  colossus_19999, adfree_399.
+            ✅ 4d All 9 mining packages have hash_rate,
+                  daily_yield_usd, duration_days.
+
+            ====== REGRESSION ======
+            ✅ R1 POST /auth/register fresh user → 200 with
+                  access_token + user.email.
+            ✅ R2 POST /auth/login round-trip → 200 + token.
+            ✅ R3 GET /auth/me with new token → 200, email matches.
+            ✅ R4 GET /dashboard → btc_usd_rate=75747.98 (LIVE,
+                  not the legacy hardcoded 65000).
+            ✅ R5 GET /withdraw/methods (regular user) →
+                  min_sats=150000, fee_pct=0.10,
+                  btc_usd_rate=75747.98 (live).
+            ✅ R6 POST /withdraw amount_sats=100 (sub-min, no
+                  admin bypass) → 400 "Minimum withdrawal is
+                  150,000 sats (0.00150000 BTC)".
+            ✅ R7 GET /support/thread (user) → 200 with thread+messages.
+            ✅ R8 POST /support/messages (user) → 200 with
+                  message.sender="user".
+            ✅ R9 POST /admin/support/threads/{user_id}/reply →
+                  200, message.sender="admin".
+            ✅ R10 GET /admin/analytics, /admin/users,
+                   /admin/transactions → all 200 with expected
+                   payload keys.
+            ✅ R11 GET /free-forever/status → 200 with
+                   hash_rate_display="500 GH/s", duration_hours=24.
+            ✅ R12 POST /free-forever/activate (first call) → 200,
+                   ok=true, status switches to active.
+            ✅ R13 POST /free-forever/activate (second call while
+                   active) → 400 with the cooldown message —
+                   idempotent-safe.
+
+            ====== NOTES / DEVIATIONS (not failures) ======
+            • The review_request mentioned support endpoints as
+              POST /api/support/threads + POST /api/support/threads/
+              {id}/messages. The ACTUAL routes implemented in
+              this build are:
+                GET  /api/support/thread        (singular)
+                POST /api/support/messages
+                POST /api/admin/support/threads/{user_id}/reply
+              Behaviour is equivalent and verified working — the
+              spec text was looser than the implementation. No fix
+              needed; main agent may want to reconcile the spec
+              doc to match the actual routes.
+            • CoinGecko is HTTP 429 from this preview host. The
+              fallback chain (CoinGecko → Coinbase → Kraken) is
+              working correctly and source="coinbase" is reported
+              accurately. Live rate is being refreshed every 5
+              minutes via APScheduler.
+            • All-Six-Agents ai_generated=True confirms the LLM
+              path (gpt-4o-mini via emergentintegrations) is
+              actually being hit — not the deterministic
+              fallback. ✅
+
+            VERDICT: Backend is production-ready for Build #18.
+            All four new items behave to spec, all regression
+            flows still green, no 500s, no auth regressions.
+
 backend_build17:
   - task: "Build #17 — Backend smoke regression (post image MIME fix, frontend-only changes)"
     implemented: true
@@ -1903,3 +2011,146 @@ agent_communication:
         the canonical routes. Otherwise the backend is in
         production-ready shape.
 
+
+
+# =====================================================================
+# Build #18 — May 27 2026 (Satoshi Cloud Miner)
+# =====================================================================
+backend:
+  - task: "Live BTC/USD rate (replaces hardcoded $65000 constant)"
+    implemented: true
+    working: true
+    file: "/app/backend/integrations/btc_rate.py + server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: |
+            New module `integrations/btc_rate.py` polls CoinGecko (primary) +
+            Coinbase + Kraken as fallbacks every 5 minutes. Cache persisted
+            in-process; ALL `BTC_USD_RATE` references in server.py replaced
+            with `get_btc_usd_rate()`. Verified live: backend logs show
+            "BTC/USD refreshed from coinbase → $75740.16" on startup and
+            "refresh every 300s" scheduled. Exposed at GET /api/system/btc_rate.
+
+  - task: "Real LLM-driven AI Trading Agent strategies"
+    implemented: true
+    working: true
+    file: "/app/backend/integrations/ai.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: |
+            `snapshot_agents()` is now async and calls the Emergent LLM
+            (openai/gpt-4o-mini) once per UTC day. Each agent gets unique
+            commentary, action recommendation, and `ai_generated: true`
+            flag. Deterministic fallback retained on LLM failure. Verified
+            live: POST /api/admin/ai/regenerate returns six distinct agent
+            entries with bespoke commentary referencing the strategy focus.
+
+  - task: "Removed phantom starter_099 IAP from SHOP_PACKAGES"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: |
+            Root cause of TestFlight "Purchase failed — starter_099" UX bug:
+            backend listed `starter_099 ($0.99)` but App Store Connect had
+            NO such IAP. Confirmed by enumerating ASC IAPs via the WFQJ6L9KXS
+            API key — only 10 IAPs exist (9 mining + 1 Ad-Free) and none
+            is starter_099. Removed from backend so the UI only shows
+            products that ASC actually knows about.
+
+frontend:
+  - task: "Friendlier 'Coming soon' message when IAP not in StoreKit catalog"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/utils/iap.ts + app/(tabs)/shop.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: |
+            Replaced scary "Purchase failed" headline with "Coming soon" when
+            the error code is E_PRODUCT_NOT_AVAILABLE. Adds a new error
+            code so the shop screen can render the right title.
+
+  - task: "Bump iOS buildNumber 17 -> 18"
+    implemented: true
+    working: true
+    file: "/app/frontend/app.json"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: |
+            Bumped buildNumber and ran expo-doctor (18/18 checks PASS).
+
+asc_metadata:
+  - task: "App Store Connect API metadata uploader"
+    implemented: true
+    working: true
+    file: "/app/store/asc_metadata_upload.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: |
+            One-shot uploader using WFQJ6L9KXS App Manager key. Today's run
+            successfully uploaded:
+              ✅ Description / keywords / supportUrl / marketingUrl /
+                 promotionalText for en-US localization
+              ✅ 12 screenshots (4 per device family x 3 sizes 6.7"/6.5"/5.5")
+              ✅ App Preview video (IPHONE_67, 617KB)
+              ✅ Created reviewSubmission (state=READY_FOR_REVIEW) for the
+                 first-IAP-with-version flow
+            Version 1.0 cannot have IAPs attached until Build #18 is uploaded
+            and processed. Script is idempotent — re-run after EAS build
+            lands to attach version + auto-bundled IAPs and submit.
+
+agent_communication:
+    - agent: "main"
+      message: |
+        Build #18 prep complete. NO more simulated data:
+          ✅ Live BTC/USD rate (CoinGecko + Coinbase + Kraken cascade,
+             5-min refresh) — verified $75740 in logs.
+          ✅ Real LLM-driven AI Trading Agents — six distinct strategies
+             with unique daily commentary, action, win-rate.
+          ✅ Phantom starter_099 IAP removed (root cause of TestFlight
+             "Purchase failed" bug; ASC never had this product).
+          ✅ Friendlier "Coming soon" UX for any future propagation gap.
+          ✅ App Store Connect metadata + 12 screenshots + App Preview
+             video uploaded via /app/store/asc_metadata_upload.py.
+          ✅ buildNumber → 18, expo-doctor 18/18 PASS, tsc clean.
+
+        Please regression-test the backend with focus on:
+          1. GET /api/system/btc_rate (new endpoint) — should return
+             {btc_usd, source, fetched_at, age_seconds}.
+          2. GET /api/ai/agents — verify six entries each with
+             commentary, action, daily_pct, win_rate fields and
+             ai_generated:true.
+          3. GET /api/packages — confirm exactly 10 packages, none of
+             them starter_099.
+          4. POST /api/admin/ai/regenerate (admin token from
+             /app/memory/test_credentials.md) — should re-roll the
+             daily snapshot.
+          5. All previously passing endpoints stay green (auth, withdraw,
+             support, dashboard, admin).
+        DO NOT test the frontend unless I ask — the user wants the
+        backend regression first before we trigger EAS Build #18.

@@ -19,7 +19,13 @@ import jwt as pyjwt
 from integrations.apple import verify_apple_transaction
 from integrations.blink import create_payout as blink_create_payout, get_payout as blink_get_payout
 from integrations import ai as ai_mod
+from integrations import btc_rate as btc_rate_mod
 from services.scheduler import start_jobs, stop_jobs
+
+
+def get_btc_usd_rate() -> float:
+    """Live BTC/USD rate (refreshed every 5 min from CoinGecko/Coinbase/Kraken)."""
+    return btc_rate_mod.get_btc_usd_rate()
 
 
 ROOT_DIR = Path(__file__).parent
@@ -44,7 +50,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=Fals
 
 
 # ---------------------------- Constants ----------------------------
-BTC_USD_RATE = 65000.0  # simulated rate (USD per BTC)
+# BTC/USD rate is now LIVE — pulled from CoinGecko (with Coinbase + Kraken
+# fallbacks) every 5 minutes. Use `get_btc_usd_rate()` to read the current
+# cached value. The legacy hardcoded 65000.0 was removed in Build #18.
 SATS_PER_BTC = 100_000_000
 DAILY_CHECKIN_REWARD_USD = 0.05  # $0.05 awarded as BTC equivalent
 REFERRAL_BONUS_USD = 0.50
@@ -60,20 +68,14 @@ MAX_DAILY_WITHDRAW_SATS = 10_000_000  # effectively no daily cap
 # Predefined shop packages. Names, taglines, and pricing are original to this
 # app; the tier ladder is a common cloud-mining structure (small starter, BOGO
 # welcome promo, mid-tier flagship, high-tier farms).
+#
+# IMPORTANT: every id in this list MUST exist as an inAppPurchaseV2 product
+# in App Store Connect (verified via the WFQJ6L9KXS API key in
+# /app/store/asc_metadata_upload.py). The legacy "starter_099" tier was
+# removed in Build #18 because Apple had no record of it and StoreKit was
+# returning E_PRODUCT_NOT_AVAILABLE on every tap. The Welcome Miner BOGO
+# at $1.99 is now the lowest-priced entry point.
 SHOP_PACKAGES = [
-    {
-        "id": "starter_099",
-        "name": "Starter Boost",
-        "tagline": "Try premium mining for less than $1",
-        "price_usd": 0.99,
-        "hash_rate": 5.0,
-        "duration_days": 7,
-        "daily_yield_usd": 0.20,
-        "badge": "Best for beginners",
-        "bogo": False,
-        "ai_optimized": False,
-        "profitability_score": 3.6,
-    },
     {
         "id": "welcome_199",
         "name": "Welcome Miner",
@@ -364,11 +366,11 @@ def gen_referral_code() -> str:
 
 
 def usd_to_btc(usd: float) -> float:
-    return usd / BTC_USD_RATE
+    return usd / get_btc_usd_rate()
 
 
 def btc_to_usd(btc: float) -> float:
-    return btc * BTC_USD_RATE
+    return btc * get_btc_usd_rate()
 
 
 def sats_to_btc(sats: int) -> float:
@@ -650,7 +652,7 @@ async def dashboard(current_user: Dict[str, Any] = Depends(get_current_user)):
         "today_earnings_usd": round(today_usd, 4),
         "today_earnings_btc": round(usd_to_btc(today_usd), 8),
         "daily_projected_usd": round(daily_projected_usd, 4),
-        "btc_usd_rate": BTC_USD_RATE,
+        "btc_usd_rate": get_btc_usd_rate(),
         "active_machines": active_machines[:5],
     }
 
@@ -814,7 +816,7 @@ async def withdraw_methods(current_user: Dict[str, Any] = Depends(get_current_us
             "max_daily_sats": MAX_DAILY_WITHDRAW_SATS,
             "fee_pct": 0.0,
             "fee_flat_sats": 0,
-            "btc_usd_rate": BTC_USD_RATE,
+            "btc_usd_rate": get_btc_usd_rate(),
             "admin_unlimited": True,
         }
     return {
@@ -824,7 +826,7 @@ async def withdraw_methods(current_user: Dict[str, Any] = Depends(get_current_us
         "max_daily_sats": MAX_DAILY_WITHDRAW_SATS,
         "fee_pct": WITHDRAW_FEE_PCT,
         "fee_flat_sats": WITHDRAW_FEE_FLAT_SATS,
-        "btc_usd_rate": BTC_USD_RATE,
+        "btc_usd_rate": get_btc_usd_rate(),
         "admin_unlimited": False,
     }
 
@@ -1076,17 +1078,23 @@ async def referral(current_user: Dict[str, Any] = Depends(get_current_user)):
 # ---------------------------- Routes: AI / Automation ----------------------------
 @api.get("/ai/ticker")
 async def ai_ticker():
-    return await ai_mod.market_commentary()
+    return await ai_mod.market_commentary(btc_usd=get_btc_usd_rate())
+
+
+# Public diagnostic — also useful for the Wallet UI to display the live rate.
+@api.get("/system/btc_rate")
+async def system_btc_rate():
+    return btc_rate_mod.rate_info()
 
 
 @api.get("/ai/agents")
 async def ai_agents():
-    """Today's deterministic AI Trading Agents snapshot."""
+    """Today's LLM-driven AI Trading Agents snapshot (cached per UTC day)."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     cached = await db.ai_snapshots.find_one({"date": today}, {"_id": 0})
     if cached and cached.get("agents"):
         return cached
-    agents = ai_mod.snapshot_agents()
+    agents = await ai_mod.snapshot_agents(btc_usd=get_btc_usd_rate())
     snap = {"date": today, "agents": agents, "created_at": now_utc().isoformat()}
     try:
         await db.ai_snapshots.update_one({"date": today}, {"$set": snap}, upsert=True)
@@ -1526,7 +1534,7 @@ async def admin_analytics(current_admin: Dict[str, Any] = Depends(get_current_ad
         "payouts_by_status": payouts_by_status,
         "latest_withdrawals": latest_wd,
         "ai_agents_today": snap.get("agents", []),
-        "btc_usd_rate": BTC_USD_RATE,
+        "btc_usd_rate": get_btc_usd_rate(),
     }
 
 
@@ -1639,7 +1647,7 @@ async def admin_ai_agents(current_admin: Dict[str, Any] = Depends(get_current_ad
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     snap = await db.ai_snapshots.find_one({"date": today}, {"_id": 0})
     if not snap:
-        agents = ai_mod.snapshot_agents()
+        agents = await ai_mod.snapshot_agents(btc_usd=get_btc_usd_rate())
         snap = {"date": today, "agents": agents, "created_at": now_utc().isoformat()}
         try:
             await db.ai_snapshots.update_one({"date": today}, {"$set": snap}, upsert=True)
@@ -1702,7 +1710,7 @@ async def admin_regenerate_ai(current_admin: Dict[str, Any] = Depends(get_curren
     daily cron produced or any admin edits). Useful when an operator wants
     fresh strategies before the next 24h cron tick."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    agents = ai_mod.snapshot_agents()
+    agents = await ai_mod.snapshot_agents(btc_usd=get_btc_usd_rate())
     snap = {
         "date": today,
         "agents": agents,
@@ -1865,6 +1873,13 @@ async def startup():
     # Seed the admin account (idempotent).
     await _ensure_admin_user()
 
+    # Kick off the live BTC/USD rate refresher (every 5 min, with fallback).
+    try:
+        await btc_rate_mod.refresh_btc_usd_rate()
+        btc_rate_mod.start_periodic_refresh(interval_s=300.0)
+    except Exception:
+        logger.exception("btc_rate startup failed (using cached default)")
+
     # Kick off background AI / automation jobs.
     try:
         start_jobs(
@@ -1879,6 +1894,10 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    try:
+        btc_rate_mod.stop_periodic_refresh()
+    except Exception:
+        pass
     try:
         stop_jobs()
     except Exception:
@@ -2033,9 +2052,10 @@ async def _job_auto_reinvest():
 
 async def _job_refresh_agents():
     # Persist today's snapshot so admin analytics can read it consistently.
+    agents = await ai_mod.snapshot_agents(btc_usd=get_btc_usd_rate())
     snap = {
         "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-        "agents": ai_mod.snapshot_agents(),
+        "agents": agents,
         "created_at": now_utc().isoformat(),
     }
     try:

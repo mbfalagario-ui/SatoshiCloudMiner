@@ -217,9 +217,15 @@ export async function buyProduct(productId: string): Promise<IapBuyResult> {
   if (!_fetchedSkus.has(productId)) {
     const products = await fetchProducts([productId]);
     if (!products.length) {
-      throw new Error(
-        `This plan isn't available right now. (SKU: ${productId})\n\nIt may still be propagating through App Store Connect, or your Apple ID doesn't have access to the sandbox catalog. Wait 5 minutes and try again, or contact support.`,
+      // Friendlier message when the App Store hasn't propagated this SKU yet.
+      // This happens BEFORE the IAP is reviewed-and-approved (the standard
+      // first-launch case for a brand new App Store version), and a few
+      // minutes after a fresh IAP is added.
+      const err: any = new Error(
+        `This plan is being reviewed by Apple and will be available shortly. (SKU: ${productId})\n\nTap a different plan, or pull to refresh in a few minutes.`,
       );
+      err.code = 'E_PRODUCT_NOT_AVAILABLE';
+      throw err;
     }
   }
 
