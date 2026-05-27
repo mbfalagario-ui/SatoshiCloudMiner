@@ -568,6 +568,47 @@ frontend:
               python /app/store/screenshots/capture.py \
                 --base $EXPO_PUBLIC_BACKEND_URL
 
+backend_build17:
+  - task: "Build #17 — Backend smoke regression (post image MIME fix, frontend-only changes)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: |
+            Build #17 smoke regression executed via
+            /app/backend_test_build17.py against
+            https://ios-clone-platform.preview.emergentagent.com/api.
+            RESULT: 8/8 PASS. No regressions from the frontend
+            image MIME fix (Pillow JPEG->PNG conversion in
+            assets/images/ and store/marketing/). Backend untouched
+            in this round and behaves identically to Build #16.
+
+            ✅ 1 POST /api/auth/login admin (mbfalagario@gmail.com)
+                 → 200, is_admin=true, access_token issued.
+            ✅ 2 GET  /api/withdraw/methods admin
+                 → min_sats=1, fee_pct=0, admin_unlimited=true.
+            ✅ 3 GET  /api/withdraw/methods regular new user
+                 → min_sats=150000, fee_pct=0.10.
+                 (Note: email validator rejects .test TLDs as
+                  special-use; @gmail.com used for the fresh user.)
+            ✅ 4 GET  /api/packages → 200, count=11.
+            ✅ 5 GET  /api/free-forever/status (user) → 200 with
+                 active/expires_at/next_available_at/hash_rate_th/
+                 hash_rate_display/duration_hours.
+            ✅ 6 GET  /api/support/thread (user) → 200.
+            ✅ 7 GET  /api/admin/support/threads (admin) → 200.
+            ✅ 8 GET  /api/admin/fees/summary (admin) → 200.
+
+            VERDICT: Backend is unchanged and healthy. Frontend-only
+            image MIME fix did not affect any backend behavior. No
+            500s, no auth regressions, no spec drift. Ship cleared
+            on the backend side.
+
 backend_build16:
   - task: "FULL BACKEND AUDIT (Build #16)"
     implemented: true

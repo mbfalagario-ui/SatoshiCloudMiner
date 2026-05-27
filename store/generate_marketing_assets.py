@@ -125,9 +125,16 @@ async def generate_one(item: dict) -> bool:
         return False
     out_path = OUT_DIR / item["filename"]
     image_bytes = base64.b64decode(images[0]["data"])
-    out_path.write_bytes(image_bytes)
-    size_kb = len(image_bytes) / 1024
-    print(f"    ✓ Saved {out_path}  ({size_kb:.1f} KB)")
+    # Gemini Nano Banana sometimes returns JPEG bytes even when prompted for
+    # PNG. EAS expo-doctor enforces magic-byte ↔ extension matching and will
+    # fail the build (icon field is .png but bytes are jpg). Round-trip
+    # through Pillow so the on-disk file is always a real PNG.
+    from io import BytesIO
+    from PIL import Image as _PILImage
+    img = _PILImage.open(BytesIO(image_bytes)).convert("RGBA")
+    img.save(out_path, format="PNG", optimize=True)
+    size_kb = out_path.stat().st_size / 1024
+    print(f"    ✓ Saved {out_path}  ({size_kb:.1f} KB, real PNG)")
     return True
 
 
