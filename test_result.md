@@ -1904,6 +1904,44 @@ agent_communication:
         ✅ A5  GET /api/admin/support/unread → 1
         ✅ A6  GET /api/admin/support/threads/{user_id} → 200
               with messages; auto-decrements admin unread to 0
+
+# =====================================================================
+# Build #19 — SHIPPED to App Store Connect (May 27 2026, 02:19 UTC)
+# =====================================================================
+# This is the final wrap-up entry. The team shipped Build #19 to TestFlight
+# AND triggered the App Store review submission in the same session.
+#
+# Pre-flight blockers solved in this session:
+#   1) starter_099 IAP removed (Apple never had it; phantom UX bug fixed)
+#   2) Live BTC/USD rate via CoinGecko/Coinbase/Kraken cascade
+#   3) Real LLM-driven AI Trading Agents (no more simulated random data)
+#   4) Friendlier "Coming soon" UX for IAP propagation
+#   5) ASC metadata uploaded (description, keywords, support+marketing URLs,
+#      promotionalText, 12 screenshots across 6.7"/6.5"/5.5")
+#   6) Build #18 shipped → rejected on iPad screenshot + tracking declaration
+#   7) supportsTablet=false + removed NSUserTrackingUsageDescription
+#      from app.json → Build #19 cleanly passes Apple validation
+#   8) App Preview video deleted (Apple encoding FAILED with MOV_RESAVE_STEREO;
+#      operator can re-upload a stereo/silent re-encode anytime)
+#   9) Build #19 attached to App Store Version 1.0 via ASC API
+#  10) reviewSubmission patched submitted:true → state WAITING_FOR_REVIEW
+#
+# Final ASC state at 02:20 UTC:
+#   - App Version 1.0 build 19 → WAITING_FOR_REVIEW
+#   - All 10 IAPs → WAITING_FOR_REVIEW (auto-bundled)
+#   - 12 screenshots live across 3 device families
+#   - en-US localization metadata live
+#
+# Submitter: WFQJ6L9KXS / mbfalagario@gmail.com via /app/store/asc_metadata_upload.py
+# Build: 9afa0c36-e764-4ee4-8609-bac58410dbc4 (EAS) / 7861f314-... (ASC)
+agent_communication:
+    - agent: "main"
+      message: |
+        Build #19 has been submitted to the App Store for review. App is
+        now in Apple's queue. Expected review time 24-48h. No further
+        agent action required unless Apple kicks back with notes.
+        IAPs will go live alongside the binary upon approval.
+
         ✅ A7  POST /api/admin/support/threads/{user_id}/reply
               → sender=admin, body matches
         ✅ A8  GET /api/support/unread (user) after admin reply

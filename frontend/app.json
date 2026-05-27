@@ -11,15 +11,14 @@
     "description": "Satoshi Cloud Miner — Bitcoin cloud-mining performance dashboard with AI yield agents and Lightning payouts.",
     "primaryColor": "#00FFA3",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "app.satoshicloudminer",
-      "buildNumber": "18",
+      "buildNumber": "19",
       "config": {
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false,
-        "NSUserTrackingUsageDescription": "Allow Satoshi Cloud Miner to improve relevance of in-app messages."
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
