@@ -104,9 +104,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="shop"
         options={{
-          title: 'Mine',
+          title: 'Store',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="hardware-chip" size={size} color={color} />
+            <Ionicons name="storefront" size={size} color={color} />
           ),
         }}
         listeners={{ tabPress: () => onTabPress('shop') }}
@@ -114,9 +114,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="wallet"
         options={{
-          title: 'Wallet',
+          title: 'Earnings',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="wallet" size={size} color={color} />
+            <Ionicons name="trending-up" size={size} color={color} />
           ),
         }}
         listeners={{ tabPress: () => onTabPress('wallet') }}

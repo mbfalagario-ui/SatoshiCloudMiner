@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, status
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
@@ -80,120 +80,93 @@ MAX_DAILY_WITHDRAW_SATS = 10_000_000  # effectively no daily cap
 SHOP_PACKAGES = [
     {
         "id": "welcome_199",
-        "name": "Welcome Miner",
-        "tagline": "Buy One Get One Free",
+        "name": "Newcomer Boost",
+        "tagline": "First-time-only mega boost",
         "price_usd": 1.99,
-        "hash_rate": 12.0,
-        "duration_days": 14,
-        "daily_yield_usd": 0.32,
-        "badge": "BOGO",
-        "bogo": True,
+        "hashrate_boost_ghs": 50,
+        "duration_hours": 24,
+        "badge": "NEW",
         "ai_optimized": False,
-        "profitability_score": 4.1,
     },
     {
         "id": "rookie_299",
-        "name": "Rookie Rig",
-        "tagline": "Steady passive yield",
+        "name": "Daily Booster",
+        "tagline": "24-hour power-up",
         "price_usd": 2.99,
-        "hash_rate": 18.0,
-        "duration_days": 30,
-        "daily_yield_usd": 0.18,
+        "hashrate_boost_ghs": 100,
+        "duration_hours": 24,
         "badge": None,
-        "bogo": False,
         "ai_optimized": False,
-        "profitability_score": 3.2,
     },
     {
         "id": "pro_499",
-        "name": "Pro Rig",
-        "tagline": "Most popular",
+        "name": "100 GH/s Pack",
+        "tagline": "Save 28.6%",
         "price_usd": 4.99,
-        "hash_rate": 30.0,
-        "duration_days": 30,
-        "daily_yield_usd": 0.30,
+        "hashrate_boost_ghs": 100,
+        "duration_hours": 720,
         "badge": "POPULAR",
-        "bogo": False,
         "ai_optimized": True,
-        "profitability_score": 4.4,
     },
     {
         "id": "elite_999",
-        "name": "Elite Cluster",
-        "tagline": "Higher hashpower",
+        "name": "200 GH/s Pack",
+        "tagline": "Save 16.7%",
         "price_usd": 9.99,
-        "hash_rate": 65.0,
-        "duration_days": 30,
-        "daily_yield_usd": 0.60,
+        "hashrate_boost_ghs": 200,
+        "duration_hours": 720,
         "badge": None,
-        "bogo": False,
         "ai_optimized": True,
-        "profitability_score": 4.2,
     },
     {
         "id": "ultra_1999",
-        "name": "Ultra Cluster",
-        "tagline": "Power user",
+        "name": "410 GH/s Pack",
+        "tagline": "Best value",
         "price_usd": 19.99,
-        "hash_rate": 140.0,
-        "duration_days": 60,
-        "daily_yield_usd": 1.20,
-        "badge": None,
-        "bogo": False,
+        "hashrate_boost_ghs": 410,
+        "duration_hours": 720,
+        "badge": "VALUE",
         "ai_optimized": True,
-        "profitability_score": 4.5,
     },
     {
         "id": "mega_4999",
-        "name": "Mega Farm",
-        "tagline": "Pro tier farm",
+        "name": "1 TH/s Mega Pack",
+        "tagline": "Tera-class boost",
         "price_usd": 49.99,
-        "hash_rate": 380.0,
-        "duration_days": 90,
-        "daily_yield_usd": 2.80,
+        "hashrate_boost_ghs": 1000,
+        "duration_hours": 720,
         "badge": "PRO",
-        "bogo": False,
         "ai_optimized": True,
-        "profitability_score": 4.7,
     },
     {
         "id": "giga_9999",
-        "name": "Giga Farm",
-        "tagline": "Industrial scale",
+        "name": "2.5 TH/s Giga Pack",
+        "tagline": "Industrial boost",
         "price_usd": 99.99,
-        "hash_rate": 800.0,
-        "duration_days": 120,
-        "daily_yield_usd": 5.50,
+        "hashrate_boost_ghs": 2500,
+        "duration_hours": 720,
         "badge": None,
-        "bogo": False,
         "ai_optimized": True,
-        "profitability_score": 4.6,
     },
     {
         "id": "titan_14999",
-        "name": "Titan Farm",
-        "tagline": "Premium yield",
+        "name": "5 TH/s Titan Pack",
+        "tagline": "Premium boost",
         "price_usd": 149.99,
-        "hash_rate": 1300.0,
-        "duration_days": 180,
-        "daily_yield_usd": 8.00,
+        "hashrate_boost_ghs": 5000,
+        "duration_hours": 720,
         "badge": None,
-        "bogo": False,
         "ai_optimized": True,
-        "profitability_score": 4.8,
     },
     {
         "id": "colossus_19999",
-        "name": "Colossus Farm",
+        "name": "7.5 TH/s Colossus Pack",
         "tagline": "Maximum hashpower",
         "price_usd": 199.99,
-        "hash_rate": 1900.0,
-        "duration_days": 365,
-        "daily_yield_usd": 6.50,
+        "hashrate_boost_ghs": 7500,
+        "duration_hours": 720,
         "badge": "FLAGSHIP",
-        "bogo": False,
         "ai_optimized": True,
-        "profitability_score": 4.9,
     },
     # ------------------------------------------------------------------
     # One-time entitlement: removes interstitial ads + unlocks priority
@@ -203,33 +176,32 @@ SHOP_PACKAGES = [
     {
         "id": "adfree_399",
         "name": "Ad-Free + Priority Support",
-        "tagline": "One-time unlock · no ads, faster support",
+        "tagline": "Remove ads · Priority queue",
         "price_usd": 3.99,
-        "hash_rate": 0.0,
-        "duration_days": 0,
-        "daily_yield_usd": 0.0,
+        "hashrate_boost_ghs": 0,
+        "duration_hours": 0,
         "badge": "UPGRADE",
-        "bogo": False,
         "ai_optimized": False,
-        "profitability_score": 0.0,
         "entitlement": "ad_free",   # marker — backend handles this specially
     },
 ]
 
 
 def _enrich_package(p: Dict[str, Any]) -> Dict[str, Any]:
-    """Add AI-style projection fields used by the Mine tab UI."""
-    total_return = p["daily_yield_usd"] * p["duration_days"]
-    roi_pct = ((total_return - p["price_usd"]) / p["price_usd"]) * 100.0
-    break_even_days = (
-        p["price_usd"] / p["daily_yield_usd"] if p["daily_yield_usd"] > 0 else 9999.0
-    )
+    """Hashrate-based package projection — Apple-safe (no ROI promises).
+
+    Returns the boost pack's hashrate gain + duration + indicative GH/s-hours.
+    No ROI calculation, no "earn $X back" — purely a virtual-hashpower spec.
+    """
+    boost_ghs = p.get("hashrate_boost_ghs", 0)
+    duration_hours = p.get("duration_hours", 0)
     return {
         **p,
-        "total_return_usd": round(total_return, 2),
-        "roi_pct": round(roi_pct, 1),
-        "break_even_days": round(break_even_days, 1),
-        "profitable": total_return > p["price_usd"],
+        "duration_label": (
+            f"{duration_hours // 24}d" if duration_hours >= 24
+            else f"{duration_hours}h"
+        ) if duration_hours > 0 else "permanent",
+        "gh_s_hours": boost_ghs * duration_hours,  # indicative spec, not money
     }
 
 
@@ -417,7 +389,17 @@ async def get_current_admin(current_user: Dict[str, Any] = Depends(get_current_u
 
 
 async def accrue_earnings(user_id: str) -> Dict[str, float]:
-    """Compute mining earnings since last accrual and credit balance."""
+    """Hashrate-based indicative earnings (Build #22+).
+
+    Replaces the old fixed daily_yield_usd math. Sums the user's hashrate
+    from active boost packs PLUS virtual hashrate granted by the daily
+    check-in and rewarded ads. Multiplies by today's share of the live
+    Bitcoin block reward, scaled by PAYOUT_MULTIPLIER (operator knob).
+
+    The result is **indicative** — earnings depend on real network
+    hashrate and BTC price at accrual time. The operator controls
+    profitability through PAYOUT_MULTIPLIER (default 50.0).
+    """
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if not user:
         return {"accrued_btc": 0.0, "accrued_usd": 0.0}
@@ -427,43 +409,71 @@ async def accrue_earnings(user_id: str) -> Dict[str, float]:
         last = datetime.fromisoformat(last)
     if not last:
         last = now_utc()
-
     now = now_utc()
     if last.tzinfo is None:
         last = last.replace(tzinfo=timezone.utc)
 
-    # Get active machines
+    # --- Sum active hashrate (GH/s) from boost packs + virtual sources ---
     machines = await db.machines.find(
         {"user_id": user_id, "status": "active"}, {"_id": 0}
     ).to_list(500)
-
-    accrued_usd = 0.0
-    active_machines = []
+    user_hashrate_ghs = 0.0
     for m in machines:
         expires_at = m.get("expires_at")
         if isinstance(expires_at, str):
             expires_at = datetime.fromisoformat(expires_at)
         if expires_at and expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
-
-        # If expired, mark expired
         if expires_at and expires_at < now:
             await db.machines.update_one(
                 {"id": m["id"]}, {"$set": {"status": "expired"}}
             )
-            # Earn only until expiration
-            machine_end = expires_at
-        else:
-            machine_end = now
-            active_machines.append(m)
-
-        machine_elapsed = max(0.0, (machine_end - last).total_seconds())
-        if machine_elapsed <= 0:
             continue
-        per_second = m["daily_yield_usd"] / 86400.0
-        accrued_usd += per_second * machine_elapsed
+        # New-style boost packs have hashrate_boost_ghs; legacy machines
+        # have hash_rate (interpret as GH/s) — both supported.
+        ghs = m.get("hashrate_boost_ghs") or m.get("hash_rate") or 0
+        user_hashrate_ghs += float(ghs)
 
-    accrued_btc = usd_to_btc(accrued_usd)
+    # Virtual hashrate from daily check-in (5 GH/s for 24h)
+    checkin_exp = user.get("checkin_hashrate_expires_at")
+    if isinstance(checkin_exp, str):
+        checkin_exp = datetime.fromisoformat(checkin_exp)
+    if checkin_exp and checkin_exp.tzinfo is None:
+        checkin_exp = checkin_exp.replace(tzinfo=timezone.utc)
+    if checkin_exp and checkin_exp > now:
+        user_hashrate_ghs += 5.0
+
+    # Virtual hashrate from rewarded ads (0.2 GH/s per ad, valid 24h, max 30/day)
+    ad_exp = user.get("ad_hashrate_expires_at")
+    if isinstance(ad_exp, str):
+        ad_exp = datetime.fromisoformat(ad_exp)
+    if ad_exp and ad_exp.tzinfo is None:
+        ad_exp = ad_exp.replace(tzinfo=timezone.utc)
+    if ad_exp and ad_exp > now:
+        user_hashrate_ghs += float(user.get("ad_hashrate_ghs", 0.0))
+
+    # --- Apply network math (real live values, no simulated data) ---
+    try:
+        from integrations import network as network_mod
+        stats = network_mod.get_network_stats()
+        net_ghs = max(1.0, stats["network_hashrate_ghs"])
+        daily_btc = max(0.01, stats["daily_block_rewards_btc"])
+    except Exception:
+        # Conservative defaults — preferable to crashing
+        net_ghs = 600_000_000_000.0
+        daily_btc = 450.0
+
+    multiplier = float(os.environ.get("PAYOUT_MULTIPLIER", "50.0"))
+    elapsed_seconds = max(0.0, (now - last).total_seconds())
+    if elapsed_seconds == 0 or user_hashrate_ghs == 0:
+        accrued_btc = 0.0
+        accrued_usd = 0.0
+    else:
+        # fair_share_btc_per_second = (user_ghs / net_ghs) * (daily_btc / 86400)
+        # actual = fair_share * multiplier
+        fair_per_sec = (user_hashrate_ghs / net_ghs) * (daily_btc / 86400.0)
+        accrued_btc = fair_per_sec * multiplier * elapsed_seconds
+        accrued_usd = btc_to_usd(accrued_btc)
 
     await db.users.update_one(
         {"id": user_id},
@@ -476,8 +486,8 @@ async def accrue_earnings(user_id: str) -> Dict[str, float]:
         },
     )
 
-    if accrued_usd > 0.0001:
-        # Aggregate daily mining payout transaction (one per accrual call)
+    if accrued_usd > 0.00001:
+        # Aggregate indicative-earnings transaction
         await db.transactions.insert_one(
             {
                 "id": str(uuid.uuid4()),
@@ -758,22 +768,22 @@ async def buy_package(
         }
 
     def _make_machine(suffix: str = "") -> Dict[str, Any]:
+        boost_ghs = pkg.get("hashrate_boost_ghs", 0)
+        duration_h = pkg.get("duration_hours", 720)
         return {
             "id": str(uuid.uuid4()),
             "user_id": current_user["id"],
             "package_id": pkg["id"],
             "name": pkg["name"] + suffix,
-            "hash_rate": pkg["hash_rate"],
-            "daily_yield_usd": pkg["daily_yield_usd"],
-            "duration_days": pkg["duration_days"],
+            "hashrate_boost_ghs": boost_ghs,
+            "hash_rate": boost_ghs,  # backward-compat with old UI fields
+            "duration_hours": duration_h,
             "purchased_at": now.isoformat(),
-            "expires_at": (now + timedelta(days=pkg["duration_days"])).isoformat(),
+            "expires_at": (now + timedelta(hours=duration_h)).isoformat(),
             "status": "active",
         }
 
     machines_added = [_make_machine()]
-    if pkg.get("bogo"):
-        machines_added.append(_make_machine(" (Bonus)"))
 
     await db.machines.insert_many(machines_added)
 
@@ -1033,14 +1043,22 @@ async def daily_checkin(current_user: Dict[str, Any] = Depends(get_current_user)
     if last_dt and (now - last_dt) > timedelta(hours=48):
         new_streak = 1  # streak broken
 
-    reward_usd = DAILY_CHECKIN_REWARD_USD * (1 + min(new_streak - 1, 6) * 0.2)
-    reward_btc = usd_to_btc(reward_usd)
+    # Hashrate Cloud Miner (Build #22+): daily check-in grants 5 GH/s
+    # of virtual hashrate for 24 hours. Streak still tracked for engagement
+    # mechanics but no longer pays a fixed USD reward (Apple-safe).
+    reward_usd = 0.0
+    reward_btc = 0.0
+    checkin_ghs_window_end = now + timedelta(hours=24)
 
     await db.users.update_one(
         {"id": current_user["id"]},
         {
-            "$set": {"last_checkin_at": now.isoformat(), "checkin_streak": new_streak},
-            "$inc": {"balance_btc": reward_btc, "lifetime_earnings_btc": reward_btc},
+            "$set": {
+                "last_checkin_at": now.isoformat(),
+                "checkin_streak": new_streak,
+                "checkin_hashrate_ghs": 5.0,
+                "checkin_hashrate_expires_at": checkin_ghs_window_end.isoformat(),
+            },
         },
     )
 
@@ -1049,16 +1067,16 @@ async def daily_checkin(current_user: Dict[str, Any] = Depends(get_current_user)
             "id": str(uuid.uuid4()),
             "user_id": current_user["id"],
             "type": "bonus",
-            "amount_usd": reward_usd,
-            "amount_btc": reward_btc,
+            "amount_usd": 0.0,
+            "amount_btc": 0.0,
             "status": "completed",
-            "description": f"Daily check-in (streak {new_streak})",
+            "description": f"Daily check-in: +5 GH/s for 24h (streak {new_streak})",
             "created_at": now.isoformat(),
         }
     )
 
     return CheckinResponse(
-        awarded_usd=round(reward_usd, 4),
+        awarded_usd=0.0,
         streak=new_streak,
         next_available_at=now + timedelta(hours=20),
     )
@@ -1087,6 +1105,190 @@ async def ai_ticker():
 @api.get("/system/btc_rate")
 async def system_btc_rate():
     return btc_rate_mod.rate_info()
+
+
+# Live Bitcoin network stats (hashrate + daily block rewards). Drives the
+# indicative-earnings engine.
+@api.get("/system/network")
+async def system_network():
+    from integrations import network as network_mod
+    return network_mod.get_network_stats()
+
+
+# ---------------------------- Rewarded ads (AdMob) ----------------------------
+@api.get("/ads/ssv_callback")
+async def admob_ssv_callback(request: Request):
+    """Google AdMob server-side verification callback.
+
+    Apple-safe pattern: ad revenue funds the user's hashrate boost, NOT
+    the user's IAP. Each verified callback grants the user 0.2 GH/s for
+    24 hours (capped at 30 ads/day → 6 GH/s/day from ads alone).
+
+    Idempotent on `transaction_id` (ad_view_id). Returns 200 on success
+    so AdMob doesn't retry, including for duplicates.
+    """
+    from integrations import admob as admob_mod
+    qs = str(request.url.query)
+    ok, params = admob_mod.verify_ssv_query(qs)
+    if not ok or not params:
+        logger.warning("admob SSV: bad signature or params; qs=%s", qs[:300])
+        return {"status": "rejected", "reason": "signature_invalid"}
+
+    tx_id = params.get("transaction_id")
+    if not tx_id:
+        return {"status": "rejected", "reason": "missing_transaction_id"}
+
+    ts = params.get("timestamp", "0")
+    try:
+        if not admob_mod.is_fresh(int(ts)):
+            logger.warning("admob SSV: stale timestamp %s", ts)
+            return {"status": "rejected", "reason": "stale"}
+    except Exception:
+        pass
+
+    # custom_data is set by the iOS client to user_id when requesting the ad
+    user_id = params.get("custom_data") or params.get("user_id")
+    if not user_id:
+        logger.warning("admob SSV: no user_id/custom_data")
+        return {"status": "rejected", "reason": "no_user"}
+
+    # Idempotency check
+    existing = await db.ad_views.find_one({"transaction_id": tx_id}, {"_id": 0})
+    if existing:
+        return {"status": "ok", "reason": "duplicate"}
+
+    # Daily cap (30 ads/user/day)
+    now = now_utc()
+    today = now.strftime("%Y-%m-%d")
+    daily_count = await db.ad_views.count_documents({
+        "user_id": user_id, "date": today,
+    })
+    if daily_count >= 30:
+        return {"status": "rejected", "reason": "daily_cap"}
+
+    # Record the ad view + extend the user's ad hashrate window
+    await db.ad_views.insert_one({
+        "transaction_id": tx_id,
+        "user_id": user_id,
+        "date": today,
+        "created_at": now.isoformat(),
+    })
+    # Each ad: +0.2 GH/s for 24h. Stacks up to 30 ads = 6 GH/s max.
+    new_total = (daily_count + 1) * 0.2
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {
+            "ad_hashrate_ghs": new_total,
+            "ad_hashrate_expires_at": (now + timedelta(hours=24)).isoformat(),
+        }},
+    )
+    return {"status": "ok", "reward_ghs": 0.2, "total_ghs_today": new_total}
+
+
+@api.get("/ads/status")
+async def ads_status(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """How many ads the user has watched today + current ad-boosted hashrate."""
+    today = now_utc().strftime("%Y-%m-%d")
+    n = await db.ad_views.count_documents({
+        "user_id": current_user["id"], "date": today,
+    })
+    return {
+        "ads_today": n,
+        "daily_cap": 30,
+        "ad_hashrate_ghs": float(current_user.get("ad_hashrate_ghs", 0.0)),
+        "ad_hashrate_expires_at": current_user.get("ad_hashrate_expires_at"),
+    }
+
+
+# ---------------------------- Indicative earnings ----------------------------
+@api.get("/earnings")
+async def earnings_view(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Indicative earnings snapshot — used by the Earnings tab.
+
+    Computes total user hashrate (boost packs + check-in + ads), pulls
+    live network stats, returns an estimate. Earnings are illustrative;
+    the operator's payout_multiplier governs final amounts.
+    """
+    from integrations import network as network_mod
+    # Settle any pending accrual first
+    await accrue_earnings(current_user["id"])
+    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
+    now = now_utc()
+
+    # Sum hashrate components
+    machines = await db.machines.find(
+        {"user_id": current_user["id"], "status": "active"}, {"_id": 0}
+    ).to_list(500)
+    pack_ghs = 0.0
+    for m in machines:
+        exp = m.get("expires_at")
+        if isinstance(exp, str):
+            exp = datetime.fromisoformat(exp)
+        if exp and exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp and exp < now:
+            continue
+        pack_ghs += float(m.get("hashrate_boost_ghs") or m.get("hash_rate") or 0)
+
+    checkin_exp = user.get("checkin_hashrate_expires_at")
+    if isinstance(checkin_exp, str):
+        checkin_exp = datetime.fromisoformat(checkin_exp)
+    if checkin_exp and checkin_exp.tzinfo is None:
+        checkin_exp = checkin_exp.replace(tzinfo=timezone.utc)
+    checkin_ghs = 5.0 if (checkin_exp and checkin_exp > now) else 0.0
+
+    ad_exp = user.get("ad_hashrate_expires_at")
+    if isinstance(ad_exp, str):
+        ad_exp = datetime.fromisoformat(ad_exp)
+    if ad_exp and ad_exp.tzinfo is None:
+        ad_exp = ad_exp.replace(tzinfo=timezone.utc)
+    ad_ghs = float(user.get("ad_hashrate_ghs", 0.0)) if (ad_exp and ad_exp > now) else 0.0
+
+    total_ghs = pack_ghs + checkin_ghs + ad_ghs
+
+    stats = network_mod.get_network_stats()
+    net_ghs = max(1.0, stats["network_hashrate_ghs"])
+    daily_btc = max(0.01, stats["daily_block_rewards_btc"])
+    multiplier = float(os.environ.get("PAYOUT_MULTIPLIER", "50.0"))
+    fair_per_day = (total_ghs / net_ghs) * daily_btc
+    indicative_daily_btc = fair_per_day * multiplier
+
+    return {
+        "indicative_balance_btc": float(user.get("balance_btc", 0.0)),
+        "lifetime_earnings_btc": float(user.get("lifetime_earnings_btc", 0.0)),
+        "hashrate": {
+            "total_ghs": total_ghs,
+            "pack_ghs": pack_ghs,
+            "checkin_ghs": checkin_ghs,
+            "ad_ghs": ad_ghs,
+        },
+        "indicative_daily_btc": indicative_daily_btc,
+        "indicative_daily_usd": btc_to_usd(indicative_daily_btc),
+        "network": {
+            "hashrate_ehs": net_ghs / 1e9,
+            "daily_block_rewards_btc": daily_btc,
+            "source": stats.get("source"),
+        },
+        "btc_usd": get_btc_usd_rate(),
+        "min_redeem_sats": int(os.environ.get("MIN_REDEEM_SATS", "10000")),
+        "disclaimer": (
+            "Earnings shown are indicative estimates only. Hashrate Cloud Miner "
+            "does not hold or manage on-chain assets; it is not a wallet, "
+            "trading platform, or fund manager. Final amounts depend on live "
+            "network conditions and server records."
+        ),
+    }
+
+
+# Redemption — non-custodial framing. User pastes their own BTC/Lightning
+# address at redemption time. Backend issues the payout via Blink.
+@api.post("/redeem")
+async def redeem(
+    payload: WithdrawRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Alias for the existing /api/withdraw flow with redemption framing."""
+    return await withdraw(payload, current_user)
 
 
 # Static download — Foolproof iOS Clone Prompts Playbook PDF.
@@ -1923,6 +2125,14 @@ async def startup():
         btc_rate_mod.start_periodic_refresh(interval_s=300.0)
     except Exception:
         logger.exception("btc_rate startup failed (using cached default)")
+
+    # Kick off the live Bitcoin network-stats refresher (every 10 min).
+    try:
+        from integrations import network as network_mod
+        await network_mod.refresh()
+        network_mod.start_periodic_refresh(interval_s=600.0)
+    except Exception:
+        logger.exception("network startup failed (using defaults)")
 
     # Kick off background AI / automation jobs.
     try:
