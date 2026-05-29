@@ -1530,23 +1530,26 @@ async def earnings_view(current_user: Dict[str, Any] = Depends(get_current_user)
         checkin_exp = datetime.fromisoformat(checkin_exp)
     if checkin_exp and checkin_exp.tzinfo is None:
         checkin_exp = checkin_exp.replace(tzinfo=timezone.utc)
-    checkin_ghs = 5.0 if (checkin_exp and checkin_exp > now) else 0.0
+    checkin_ghs = float(user.get("checkin_hashrate_ghs", 0.0)) if (checkin_exp and checkin_exp > now) else 0.0
 
-    ad_exp = user.get("ad_hashrate_expires_at")
-    if isinstance(ad_exp, str):
-        ad_exp = datetime.fromisoformat(ad_exp)
-    if ad_exp and ad_exp.tzinfo is None:
-        ad_exp = ad_exp.replace(tzinfo=timezone.utc)
-    ad_ghs = float(user.get("ad_hashrate_ghs", 0.0)) if (ad_exp and ad_exp > now) else 0.0
+    # Sum still-active per-ad-view rewards (Build #22+ schema)
+    ad_ghs = 0.0
+    cur = db.ad_views.find(
+        {"user_id": current_user["id"], "expires_at": {"$gt": now.isoformat()}},
+        {"_id": 0, "reward_ghs": 1},
+    )
+    async for av in cur:
+        ad_ghs += float(av.get("reward_ghs", 0.0))
 
     total_ghs = pack_ghs + checkin_ghs + ad_ghs
 
     stats = network_mod.get_network_stats()
     net_ghs = max(1.0, stats["network_hashrate_ghs"])
     daily_btc = max(0.01, stats["daily_block_rewards_btc"])
-    multiplier = float(os.environ.get("PAYOUT_MULTIPLIER", "50.0"))
+    multiplier = float(os.environ.get("PAYOUT_MULTIPLIER", "0.85"))
     fair_per_day = (total_ghs / net_ghs) * daily_btc
     indicative_daily_btc = fair_per_day * multiplier
+    indicative_per_second_btc = indicative_daily_btc / 86400.0
 
     return {
         "indicative_balance_btc": float(user.get("balance_btc", 0.0)),
@@ -1559,13 +1562,15 @@ async def earnings_view(current_user: Dict[str, Any] = Depends(get_current_user)
         },
         "indicative_daily_btc": indicative_daily_btc,
         "indicative_daily_usd": btc_to_usd(indicative_daily_btc),
+        "indicative_per_second_btc": indicative_per_second_btc,
+        "payout_multiplier": multiplier,
         "network": {
             "hashrate_ehs": net_ghs / 1e9,
             "daily_block_rewards_btc": daily_btc,
             "source": stats.get("source"),
         },
         "btc_usd": get_btc_usd_rate(),
-        "min_redeem_sats": int(os.environ.get("MIN_REDEEM_SATS", "10000")),
+        "min_redeem_sats": int(os.environ.get("MIN_REDEEM_SATS", "25000")),
         "disclaimer": (
             "Earnings shown are indicative estimates only. Hashrate Cloud Miner "
             "does not hold or manage on-chain assets; it is not a wallet, "

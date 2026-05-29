@@ -8,12 +8,16 @@ import { useSession } from '@/src/ctx';
 import { confirmDialog, notify } from '@/src/utils/dialog';
 import { api } from '@/src/utils/api';
 
+type FAQ = { id: string; q: string; a: string };
+
 export default function Profile() {
   const router = useRouter();
   const { user, signOut, refresh } = useSession();
   const [autoCheckin, setAutoCheckin] = useState(true);
   const [autoReinvest, setAutoReinvest] = useState(false);
   const [supportUnread, setSupportUnread] = useState(0);
+  const [faqs, setFaqs] = useState<FAQ[]>([]);
+  const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -39,6 +43,16 @@ export default function Profile() {
     load();
     const t = setInterval(load, 20_000);
     return () => { mounted = false; clearInterval(t); };
+  }, []);
+
+  // FAQ list — public endpoint, no auth header.
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api('/faqs', { auth: false });
+        setFaqs(r.faqs || []);
+      } catch {}
+    })();
   }, []);
 
   const toggle = async (k: 'auto_checkin' | 'auto_reinvest', v: boolean) => {
@@ -184,6 +198,48 @@ export default function Profile() {
           </TouchableOpacity>
         ) : null}
 
+        {/* Help & FAQs — searchable knowledge base. Tap to expand. */}
+        <Text style={styles.sectionLabel}>HELP & FAQs</Text>
+        <View style={styles.faqWrap}>
+          {faqs.length === 0 ? (
+            <Text style={styles.faqEmpty}>Loading frequently asked questions…</Text>
+          ) : (
+            faqs.map((f, i) => {
+              const open = expandedFaq === f.id;
+              return (
+                <TouchableOpacity
+                  key={f.id}
+                  activeOpacity={0.85}
+                  style={[styles.faqRow, i === faqs.length - 1 && { borderBottomWidth: 0 }]}
+                  onPress={() => setExpandedFaq(open ? null : f.id)}
+                  testID={`profile-faq-${f.id}`}
+                >
+                  <View style={styles.faqHeader}>
+                    <Ionicons
+                      name={open ? 'chevron-down-circle' : 'help-circle'}
+                      size={18}
+                      color={open ? colors.primary : colors.textSecondary}
+                    />
+                    <Text style={styles.faqQ} numberOfLines={open ? undefined : 2}>{f.q}</Text>
+                  </View>
+                  {open ? <Text style={styles.faqA}>{f.a}</Text> : null}
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
+
+        <TouchableOpacity
+          testID="profile-contact-support-btn"
+          style={styles.contactSupportBtn}
+          activeOpacity={0.85}
+          onPress={() => router.push('/support')}
+        >
+          <Ionicons name="chatbubble-ellipses" size={18} color={colors.primary} />
+          <Text style={styles.contactSupportText}>Still need help? Chat with support</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+        </TouchableOpacity>
+
         <TouchableOpacity
           testID="profile-logout-btn"
           style={styles.logoutBtn}
@@ -194,7 +250,7 @@ export default function Profile() {
           <Text style={styles.logoutText}>Sign out</Text>
         </TouchableOpacity>
 
-        <Text style={styles.appVersion}>Hashrate Cloud Miner v1.0.1 (21)</Text>
+        <Text style={styles.appVersion}>Hashrate Cloud Miner v1.0.1 (23)</Text>
         <Text style={styles.disclaimer}>
           Hashrate Cloud Miner is a cloud computing simulation and monitoring tool. It is not a financial,
           investment, or trading platform. Outcomes depend on server status and operational
@@ -305,6 +361,36 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logoutText: { color: colors.danger, fontSize: 14, fontWeight: '700' },
+  faqWrap: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    overflow: 'hidden',
+  },
+  faqEmpty: { color: colors.textTertiary, fontSize: 12, padding: spacing.md, textAlign: 'center' },
+  faqRow: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSoft,
+  },
+  faqHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  faqQ: { flex: 1, color: colors.text, fontSize: 13, fontWeight: '700', lineHeight: 18 },
+  faqA: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 8, marginLeft: 28 },
+  contactSupportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    marginTop: spacing.sm,
+  },
+  contactSupportText: { flex: 1, color: colors.primary, fontWeight: '800', fontSize: 13 },
   appVersion: { color: colors.textTertiary, fontSize: 11, textAlign: 'center', marginTop: spacing.lg },
   disclaimer: {
     color: colors.textTertiary,

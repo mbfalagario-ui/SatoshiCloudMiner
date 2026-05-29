@@ -436,14 +436,15 @@ function Stat({ label, value }: { label: string; value: string }) {
 function QuickBtn({ icon, label, onPress, badge }: any) {
   return (
     <TouchableOpacity style={styles.quickBtn} onPress={onPress} activeOpacity={0.85}>
-      <Ionicons name={icon} size={16} color={colors.primary} />
-      <Text style={styles.quickBtnText}>{label}</Text>
-      {badge && badge > 0 ? (
-        <View style={styles.quickBadge}>
-          <Text style={styles.quickBadgeText}>{badge > 99 ? '99+' : badge}</Text>
-        </View>
-      ) : null}
-      <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} />
+      <View style={styles.quickIconWrap}>
+        <Ionicons name={icon} size={20} color={colors.primary} />
+        {badge && badge > 0 ? (
+          <View style={styles.quickBadge}>
+            <Text style={styles.quickBadgeText}>{badge > 99 ? '99+' : badge}</Text>
+          </View>
+        ) : null}
+      </View>
+      <Text style={styles.quickBtnText} numberOfLines={1} allowFontScaling={false}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -457,28 +458,39 @@ const styles = StyleSheet.create({
   quickRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
   quickBtn: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 6,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.borderSoft,
+    minHeight: 72,
   },
-  quickBtnText: { flex: 1, color: colors.text, fontWeight: '700', fontSize: 13 },
+  quickIconWrap: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  quickBtnText: { color: colors.text, fontWeight: '700', fontSize: 11, marginTop: 6, textAlign: 'center', letterSpacing: 0.2 },
   quickBadge: {
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 6,
-    borderRadius: 10,
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: 9,
     backgroundColor: '#ef4444',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 4,
+    borderWidth: 2,
+    borderColor: colors.surface,
   },
-  quickBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  quickBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   cards: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
   kpi: {
     flexBasis: '48%',

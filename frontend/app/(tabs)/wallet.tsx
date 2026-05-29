@@ -11,12 +11,15 @@ import { api } from '@/src/utils/api';
 import { useSession } from '@/src/ctx';
 import { colors, spacing, radius, fonts, media, shadows, fmtUsd, fmtBtc, fmtSats } from '@/src/utils/theme';
 import CrossSellBanner from '@/src/components/CrossSellBanner';
+import TickingBtc from '@/src/components/TickingBtc';
 
 type EarningsPayload = {
   indicative_balance_btc: number;
   lifetime_earnings_btc: number;
   hashrate: { total_ghs: number; pack_ghs: number; checkin_ghs: number; ad_ghs: number };
   indicative_daily_btc?: number;
+  indicative_per_second_btc?: number;
+  payout_multiplier?: number;
   btc_usd?: number;
   disclaimer?: string;
   min_redeem_sats?: number;
@@ -77,8 +80,24 @@ export default function Earnings() {
             <Ionicons name="logo-bitcoin" size={28} color={colors.primary} />
             <Text style={styles.balanceLabel}>Indicative Earnings</Text>
           </View>
-          <Text style={styles.balanceBtc}>{fmtBtc(balanceBtc)}</Text>
-          <Text style={styles.balanceUsd}>≈ {fmtUsd(balanceUsd)} · {fmtSats(balanceSats)} sats</Text>
+          <TickingBtc
+            style={styles.balanceBtc}
+            baseBtc={balanceBtc}
+            ratePerSecondBtc={earnings.indicative_per_second_btc || 0}
+            suffix=""
+            testID="earnings-balance-tick"
+          />
+          <View style={styles.satsRow}>
+            <Text style={styles.balanceUsd}>≈ {fmtUsd(balanceUsd)}</Text>
+            <Text style={styles.balanceUsd}>{'  ·  '}</Text>
+            <TickingBtc
+              style={styles.balanceSats}
+              baseBtc={balanceBtc}
+              ratePerSecondBtc={earnings.indicative_per_second_btc || 0}
+              decimals={4}
+              unit="sats"
+            />
+          </View>
         </LinearGradient>
 
         {/* Redeem CTA */}
@@ -130,7 +149,9 @@ const styles = StyleSheet.create({
   coinRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.sm },
   balanceLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
   balanceBtc: { color: colors.text, fontFamily: fonts.mono, fontSize: 30, fontWeight: '800', letterSpacing: -0.5 },
-  balanceUsd: { color: colors.textSecondary, fontSize: 12, marginTop: 6, fontFamily: fonts.mono },
+  balanceUsd: { color: colors.textSecondary, fontSize: 12, fontFamily: fonts.mono },
+  satsRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 6, flexWrap: 'wrap', justifyContent: 'center' },
+  balanceSats: { color: colors.primary, fontSize: 13, fontFamily: fonts.mono, fontWeight: '700' },
   redeemBtn: { borderRadius: radius.md, overflow: 'hidden', marginBottom: spacing.md, ...shadows.glow },
   redeemInner: { paddingVertical: 18, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
   redeemText: { color: colors.bg, fontSize: 17, fontWeight: '900' },

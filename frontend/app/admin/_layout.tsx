@@ -35,16 +35,15 @@ export default function AdminLayout() {
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: colors.bg },
-        headerTintColor: colors.text,
-        headerTitleStyle: { fontWeight: '800' },
+        headerShown: false,
         contentStyle: { backgroundColor: colors.bg },
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'Admin' }} />
-      <Stack.Screen name="users" options={{ title: 'Users' }} />
-      <Stack.Screen name="transactions" options={{ title: 'Transactions' }} />
-      <Stack.Screen name="support" options={{ title: 'Support' }} />
+      <Stack.Screen name="index" />
+      <Stack.Screen name="users" />
+      <Stack.Screen name="transactions" />
+      <Stack.Screen name="support" />
+      <Stack.Screen name="strategist" />
     </Stack>
   );
 }

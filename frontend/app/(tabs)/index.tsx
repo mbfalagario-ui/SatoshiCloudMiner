@@ -15,6 +15,7 @@ import CrossSellBanner from '@/src/components/CrossSellBanner';
 import DailyCheckinCard from '@/src/components/DailyCheckinCard';
 import WatchAdCard from '@/src/components/WatchAdCard';
 import HashrateBreakdown from '@/src/components/HashrateBreakdown';
+import TickingBtc from '@/src/components/TickingBtc';
 
 type EarningsPayload = {
   indicative_balance_btc: number;
@@ -22,6 +23,8 @@ type EarningsPayload = {
   hashrate: { total_ghs: number; pack_ghs: number; checkin_ghs: number; ad_ghs: number };
   indicative_daily_btc?: number;
   indicative_daily_usd?: number;
+  indicative_per_second_btc?: number;
+  payout_multiplier?: number;
   btc_usd?: number;
   disclaimer?: string;
   min_redeem_sats?: number;
@@ -108,8 +111,25 @@ export default function Home() {
         <LinearGradient colors={['#16202C', '#0E1620']} style={styles.balanceCard} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
           <Image source={{ uri: media.cryptoCoin }} style={styles.coinBg} />
           <Text style={styles.cardLabel}>INDICATIVE EARNINGS</Text>
-          <Text style={styles.balanceBtc} testID="home-balance-btc">{fmtBtc(earnings.indicative_balance_btc)} BTC</Text>
-          <Text style={styles.balanceUsd} testID="home-balance-usd">{fmtUsd(earnings.indicative_balance_btc * (earnings.btc_usd || 0))}</Text>
+          <TickingBtc
+            style={styles.balanceBtc}
+            baseBtc={earnings.indicative_balance_btc || 0}
+            ratePerSecondBtc={earnings.indicative_per_second_btc || 0}
+            decimals={8}
+            unit="BTC"
+            testID="home-balance-btc"
+          />
+          <View style={styles.satsRow}>
+            <Text style={styles.balanceUsd} testID="home-balance-usd">{fmtUsd((earnings.indicative_balance_btc || 0) * (earnings.btc_usd || 0))}</Text>
+            <Text style={styles.satsDot}> · </Text>
+            <TickingBtc
+              style={styles.satsLive}
+              baseBtc={earnings.indicative_balance_btc || 0}
+              ratePerSecondBtc={earnings.indicative_per_second_btc || 0}
+              decimals={4}
+              unit="sats"
+            />
+          </View>
           <View style={styles.balanceRow}>
             <View style={styles.balanceCell}>
               <Text style={styles.cellLabel}>Daily est.</Text>
@@ -185,7 +205,10 @@ const styles = StyleSheet.create({
   balanceCard: { borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.borderSoft, overflow: 'hidden', marginBottom: spacing.md, ...shadows.card },
   coinBg: { position: 'absolute', right: -30, top: -10, width: 160, height: 160, opacity: 0.3 },
   cardLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
-  balanceUsd: { color: colors.textSecondary, fontFamily: fonts.mono, fontSize: 14, fontWeight: '600', marginTop: 2 },
+  balanceUsd: { color: colors.textSecondary, fontFamily: fonts.mono, fontSize: 14, fontWeight: '600' },
+  satsRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 2, flexWrap: 'wrap' },
+  satsDot: { color: colors.textTertiary, fontSize: 13 },
+  satsLive: { color: colors.primary, fontFamily: fonts.mono, fontSize: 13, fontWeight: '700' },
   balanceBtc: { color: colors.primary, fontFamily: fonts.mono, fontSize: 32, fontWeight: '800', marginTop: spacing.sm, letterSpacing: -0.5 },
   balanceRow: { flexDirection: 'row', marginTop: spacing.lg, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.borderSoft },
   balanceCell: { flex: 1 },
