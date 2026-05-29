@@ -1239,6 +1239,10 @@ def _checkin_state(user: Dict[str, Any]) -> Dict[str, Any]:
                 next_step = 1  # cycle restart after Day 7
             else:
                 next_step = 1  # streak broken
+    else:
+        # User already claimed today → preview the next claim's step.
+        # If streak < 7, next claim is streak+1; if streak == 7 it resets to 1.
+        next_step = streak + 1 if (streak >= 1 and streak < 7) else 1
 
     next_reward_ghs = DAILY_CHECKIN_LADDER_GHS[next_step - 1]
     next_at = _next_1am_utc(now)
