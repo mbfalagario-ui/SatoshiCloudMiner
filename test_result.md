@@ -1525,6 +1525,35 @@ backend_build22:
           Backend Build #22 is fully cleared. No regressions
           re-introduced by the _checkin_state fix.
 
+      - working: true
+        agent: "main"
+        comment: |
+          BUILD #22 SHIPPED TO TESTFLIGHT.
+
+          EAS Build:
+            ID         : ffa2731e-ced7-47c7-b153-23fd71f68ef6
+            Profile    : production
+            Build #    : 22 (auto-incremented from 21)
+            Version    : 1.0.1
+            SDK        : 54.0.0
+            Duration   : 7.2 min
+            IPA        : https://expo.dev/artifacts/eas/xySSxfFZCQortuq7ZgffmW.ipa
+            Build URL  : https://expo.dev/accounts/pastrypuffz/projects/satoshi-cloud-miner/builds/ffa2731e-ced7-47c7-b153-23fd71f68ef6
+
+          ASC Submit:
+            Submit ID  : e2d17f59-9bc4-4397-8c7c-595e9c48d861
+            Status     : Submitted to App Store Connect — processing
+            App ID     : 6773104756 (Hashrate Cloud Miner)
+            Team       : UHF3KNM9F9
+            Key        : WFQJ6L9KXS
+            TestFlight : https://appstoreconnect.apple.com/apps/6773104756/testflight/ios
+            Submitted  : 2026-05-29 22:34 UTC
+
+          🛑 PAUSED — DO NOT submit for App Store Review.
+          Apple will email the user when processing finishes (~5-10 min).
+          User must verify the AdMob/Virtual Hashrate UX in TestFlight
+          before authorising a Review submission.
+
 agent_communication:
     - agent: "main"
       message: |
