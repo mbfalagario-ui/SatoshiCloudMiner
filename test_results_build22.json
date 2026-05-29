@@ -1,0 +1,220 @@
+{
+  "base": "https://ios-clone-platform.preview.emergentagent.com/api",
+  "total": 40,
+  "passed": 38,
+  "failed": 2,
+  "failures": [
+    {
+      "name": "C11 status after claim",
+      "ok": false,
+      "detail": "avail=False step=1 reward=1.2"
+    },
+    {
+      "name": "J33 /system/network hashrate>1e18",
+      "ok": false,
+      "detail": "network_hashrate_ghs=1005384755878.147"
+    }
+  ],
+  "all": [
+    {
+      "name": "A1 admin login",
+      "ok": true,
+      "detail": "is_admin=True"
+    },
+    {
+      "name": "A2 register fresh user",
+      "ok": true,
+      "detail": "email=test_b22_17823446@gmail.com balance_btc=0.0 streak=0"
+    },
+    {
+      "name": "A3 /auth/me fresh user",
+      "ok": true,
+      "detail": "balance_btc=0.0"
+    },
+    {
+      "name": "B4 packages count==10",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "B4 bonus_pct ladder",
+      "ok": true,
+      "detail": "all match"
+    },
+    {
+      "name": "B4 original_price_usd > price_usd",
+      "ok": true,
+      "detail": "ok for all mining SKUs"
+    },
+    {
+      "name": "B4 hashrate_display present",
+      "ok": true,
+      "detail": "all present"
+    },
+    {
+      "name": "B5 first buy welcome_199 bonus 15% (7.5 GH/s)",
+      "ok": true,
+      "detail": "applied=True pct=15.0 ghs=7.5"
+    },
+    {
+      "name": "B6 second buy welcome_199 no bonus",
+      "ok": true,
+      "detail": "applied=False bonus_ghs=0.0"
+    },
+    {
+      "name": "B7 buy non_existent -> 404",
+      "ok": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "C8 checkin/status fresh user",
+      "ok": true,
+      "detail": "avail=True step=1 reward=1.2 ladder=[1.2, 1.6, 2.2, 3.1, 5.0, 6.4, 8.0] boost_h=24"
+    },
+    {
+      "name": "C9 POST /daily-checkin",
+      "ok": true,
+      "detail": "streak=1 awarded_usd=0.0"
+    },
+    {
+      "name": "C10 POST again -> 400 with cooldown msg",
+      "ok": true,
+      "detail": "status=400 body={\"detail\":\"Check in again at 2026-05-30T01:00:00+00:00\"}"
+    },
+    {
+      "name": "C11 status after claim",
+      "ok": false,
+      "detail": "avail=False step=1 reward=1.2"
+    },
+    {
+      "name": "D12 ads/status fresh",
+      "ok": true,
+      "detail": "ads_today=0 cap=30 rem=30 next=1.5 active=0.0"
+    },
+    {
+      "name": "D13 ads/claim_dev first ad",
+      "ok": true,
+      "detail": "reward=1.5 pos=1"
+    },
+    {
+      "name": "D14 ads positions 1-6 with 6th=3.0 GH/s",
+      "ok": true,
+      "detail": "positions=[1, 2, 3, 4, 5, 6] rewards=[1.5, 1.5, 1.5, 1.5, 1.5, 3.0]"
+    },
+    {
+      "name": "D15 ads/status after 6 ads (active=10.5)",
+      "ok": true,
+      "detail": "ads_today=6 rem=24 active=10.5"
+    },
+    {
+      "name": "E16 GET /earnings",
+      "ok": true,
+      "detail": "bal_btc=8.756918535694116e-13 hr={'total_ghs': 112.5, 'pack_ghs': 107.5, 'checkin_ghs': 5.0, 'ad_ghs': 0.0} min_redeem_sats=25000 disclaimer_len=230"
+    },
+    {
+      "name": "E17 store/cross-sell",
+      "ok": true,
+      "detail": "avail=True headline='+100%!! More Computing Power' price_label='$9.99!' orig='$13.32' disc=25"
+    },
+    {
+      "name": "F18 withdraw/methods fresh",
+      "ok": true,
+      "detail": "min=25000 max=50000 fee_flat=150 cooldown_h=24 fee_pct=0.0 admin_unl=False"
+    },
+    {
+      "name": "F19 withdraw/methods admin",
+      "ok": true,
+      "detail": "min=1 fee_flat=0 cooldown_h=0 admin_unl=True"
+    },
+    {
+      "name": "F20 quote 25000 insufficient balance",
+      "ok": true,
+      "detail": "ok=False errors=Insufficient balance. You need 25,150 sats (25,000 + 150 fee) but have 0 sats."
+    },
+    {
+      "name": "F21 quote 10000 below min",
+      "ok": true,
+      "detail": "ok=False errors=Minimum redeem is 25,000 sats. | Insufficient balance. You need 10,150 sats (10,000 + 150 fee) but have 0 sats."
+    },
+    {
+      "name": "F22 quote 60000 above max",
+      "ok": true,
+      "detail": "ok=False errors=Maximum redeem is 50,000 sats. | Insufficient balance. You need 60,150 sats (60,000 + 150 fee) but have 0 sats."
+    },
+    {
+      "name": "F23 withdraw amount=10000 -> 400 min-sats",
+      "ok": true,
+      "detail": "status=400 body={\"detail\":\"Minimum redeem is 25,000 sats (0.00025000 BTC).\"}"
+    },
+    {
+      "name": "F24 withdraw 25000 no balance -> 400 insufficient",
+      "ok": true,
+      "detail": "status=400 body={\"detail\":\"Insufficient balance. Need 25,150 sats (25,000 sats + 150 sats fee), have 0 sats.\"}"
+    },
+    {
+      "name": "G25 GET /faqs (18, required ids)",
+      "ok": true,
+      "detail": "count=18 missing=none structured=True"
+    },
+    {
+      "name": "H26 /support/ai-reply non-premium",
+      "ok": true,
+      "detail": "premium=False reply_len=187 suggested_faqs[0]=faq_daily_checkin (should be faq_daily_checkin: True)"
+    },
+    {
+      "name": "H27 /support/thread has user + AI admin msg",
+      "ok": true,
+      "detail": "msgs=2 has_user=True has_admin_ai=True"
+    },
+    {
+      "name": "I28 GET /admin/config initial values",
+      "ok": true,
+      "detail": "all match"
+    },
+    {
+      "name": "I29 PATCH payout=1.0",
+      "ok": true,
+      "detail": "new=1.0"
+    },
+    {
+      "name": "I30 PATCH payout=0.85",
+      "ok": true,
+      "detail": "new=0.85"
+    },
+    {
+      "name": "I31 non-admin /admin/config -> 403",
+      "ok": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "J32 /system/btc_rate",
+      "ok": true,
+      "detail": "btc_usd=73499.74"
+    },
+    {
+      "name": "J33 /system/network hashrate>1e18",
+      "ok": false,
+      "detail": "network_hashrate_ghs=1005384755878.147"
+    },
+    {
+      "name": "J34 /ai/ticker",
+      "ok": true,
+      "detail": "text_len=93"
+    },
+    {
+      "name": "J35 /ai/agents 6 agents",
+      "ok": true,
+      "detail": "count=6"
+    },
+    {
+      "name": "J36 /admin/analytics admin",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "J37 schema_meta v22_admob_pivot",
+      "ok": true,
+      "detail": "doc={'id': 'schema', 'version': 'v22_admob_pivot'}"
+    }
+  ]
+}

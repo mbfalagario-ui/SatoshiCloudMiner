@@ -59,130 +59,188 @@ SATS_PER_BTC = 100_000_000
 DAILY_CHECKIN_REWARD_USD = 0.05  # $0.05 awarded as BTC equivalent
 REFERRAL_BONUS_USD = 0.50
 
-# Withdrawal limits are denominated in SATS (Lightning-only flow).
-# Updated June-2025: minimum 0.00150000 BTC, no maximum, flat 10% fee.
-MIN_WITHDRAW_SATS = 150_000     # 0.00150000 BTC
-MAX_WITHDRAW_SATS = 10_000_000  # 0.10000000 BTC (safety ceiling — UI shows "no max")
-WITHDRAW_FEE_PCT = 0.10         # flat 10% routing/processing fee
-WITHDRAW_FEE_FLAT_SATS = 0      # no baseline; the 10% covers network costs
-MAX_DAILY_WITHDRAW_SATS = 10_000_000  # effectively no daily cap
+# Withdrawal/redeem limits — Build #22+ (AdMob / Virtual Hashrate model).
+# All monetary settings exposed as ENV knobs so the operator can tune
+# profitability without redeploys.
+MIN_WITHDRAW_SATS = int(os.environ.get("MIN_REDEEM_SATS", "25000"))
+MAX_WITHDRAW_SATS = int(os.environ.get("MAX_REDEEM_SATS", "50000"))
+WITHDRAW_FEE_FLAT_SATS = int(os.environ.get("REDEEM_FEE_SATS", "150"))
+WITHDRAW_FEE_PCT = 0.0  # fee is flat now; previous 10% pct kept for backward-compat in tests
+MAX_DAILY_WITHDRAW_SATS = MAX_WITHDRAW_SATS  # one redeem per 24h, max is the per-tx max
+REDEEM_COOLDOWN_HOURS = int(os.environ.get("REDEEM_COOLDOWN_HOURS", "24"))
+AD_DAILY_CAP = int(os.environ.get("AD_DAILY_CAP", "30"))
+CROSS_SELL_DISCOUNT_PCT = int(os.environ.get("CROSS_SELL_DISCOUNT_PCT", "25"))
+PAYOUT_MULTIPLIER = float(os.environ.get("PAYOUT_MULTIPLIER", "0.85"))
+SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "support@hashratecloudminer.com")
 
-# Predefined shop packages. Names, taglines, and pricing are original to this
-# app; the tier ladder is a common cloud-mining structure (small starter, BOGO
-# welcome promo, mid-tier flagship, high-tier farms).
+# ----------------------------------------------------------------------
+# Daily Check-In ladder — 7-day progressive reward (GH/s, 24h boost each).
+# Ladder resets at 1:00 AM UTC. Streak resets on missed day.
+# ----------------------------------------------------------------------
+DAILY_CHECKIN_LADDER_GHS = [1.2, 1.6, 2.2, 3.1, 5.0, 6.4, 8.0]
+CHECKIN_BOOST_DURATION_HOURS = 24
+
+# ----------------------------------------------------------------------
+# Rewarded Ad ladder — GH/s reward per ad position in today's stack.
+# Each ad's boost lasts 24h. Counter resets at 1:00 AM UTC.
+# ----------------------------------------------------------------------
+AD_REWARD_LADDER_GHS = [
+    1.5, 1.5, 1.5, 1.5, 1.5,        # ads 1-5
+    3.0, 3.0, 3.0, 3.0, 3.0,        # ads 6-10
+    5.0, 5.0, 5.0, 5.0, 5.0,        # ads 11-15
+    7.0, 7.0, 7.0, 7.0, 7.0,        # ads 16-20
+    9.5, 9.5, 9.5, 9.5, 9.5,        # ads 21-25
+    12.0, 12.0, 12.0, 12.0, 12.0,   # ads 26-30
+]
+AD_BOOST_DURATION_HOURS = 24
+
+# Predefined shop packages — Build #22+ Apple-safe virtual hashrate model.
 #
 # IMPORTANT: every id in this list MUST exist as an inAppPurchaseV2 product
-# in App Store Connect (verified via the WFQJ6L9KXS API key in
-# /app/store/asc_metadata_upload.py). The legacy "starter_099" tier was
-# removed in Build #18 because Apple had no record of it and StoreKit was
-# returning E_PRODUCT_NOT_AVAILABLE on every tap. The Welcome Miner BOGO
-# at $1.99 is now the lowest-priced entry point.
+# in App Store Connect (verified via the WFQJ6L9KXS API key). Do NOT change
+# the ids — these are locked into Apple. Names, taglines, bonuses, and
+# durations may be edited freely (and synced to ASC via asc_metadata_upload).
+#
+# `first_purchase_bonus_pct` — one-time extra GH/s on the FIRST purchase of
+# this SKU per user. Linear 15→50% ladder across the 9 mining plans.
+# `original_price_usd` — marketing strike-through price for visual "25% off"
+# (does not actually charge a different amount; Apple still bills `price_usd`).
 SHOP_PACKAGES = [
     {
         "id": "welcome_199",
         "name": "Newcomer Boost",
         "tagline": "First-time-only mega boost",
+        "offer_text": "Buy 1, Get 1 free",
         "price_usd": 1.99,
+        "original_price_usd": 2.65,
         "hashrate_boost_ghs": 50,
-        "duration_hours": 24,
+        "duration_hours": 720,
         "badge": "NEW",
+        "first_purchase_bonus_pct": 15,
         "ai_optimized": False,
     },
     {
         "id": "rookie_299",
         "name": "Daily Booster",
-        "tagline": "24-hour power-up",
+        "tagline": "30-day power-up",
+        "offer_text": None,
         "price_usd": 2.99,
+        "original_price_usd": 3.99,
         "hashrate_boost_ghs": 100,
-        "duration_hours": 24,
+        "duration_hours": 720,
         "badge": None,
+        "first_purchase_bonus_pct": 19,
         "ai_optimized": False,
     },
     {
         "id": "pro_499",
-        "name": "100 GH/s Pack",
-        "tagline": "Save 28.6%",
+        "name": "Pro Rig",
+        "tagline": "Most popular",
+        "offer_text": None,
         "price_usd": 4.99,
-        "hashrate_boost_ghs": 100,
+        "original_price_usd": 6.65,
+        "hashrate_boost_ghs": 230,
         "duration_hours": 720,
         "badge": "POPULAR",
+        "first_purchase_bonus_pct": 24,
         "ai_optimized": True,
     },
     {
         "id": "elite_999",
-        "name": "200 GH/s Pack",
-        "tagline": "Save 16.7%",
+        "name": "Elite Rig",
+        "tagline": "Save 25%",
+        "offer_text": None,
         "price_usd": 9.99,
-        "hashrate_boost_ghs": 200,
+        "original_price_usd": 13.32,
+        "hashrate_boost_ghs": 500,
         "duration_hours": 720,
         "badge": None,
+        "first_purchase_bonus_pct": 28,
         "ai_optimized": True,
     },
     {
         "id": "ultra_1999",
-        "name": "410 GH/s Pack",
+        "name": "Ultra Rig",
         "tagline": "Best value",
+        "offer_text": None,
         "price_usd": 19.99,
-        "hashrate_boost_ghs": 410,
+        "original_price_usd": 26.65,
+        "hashrate_boost_ghs": 1100,
         "duration_hours": 720,
         "badge": "VALUE",
+        "first_purchase_bonus_pct": 33,
         "ai_optimized": True,
     },
     {
         "id": "mega_4999",
-        "name": "1 TH/s Mega Pack",
+        "name": "Mega Rig",
         "tagline": "Tera-class boost",
+        "offer_text": None,
         "price_usd": 49.99,
-        "hashrate_boost_ghs": 1000,
+        "original_price_usd": 66.65,
+        "hashrate_boost_ghs": 2300,
         "duration_hours": 720,
         "badge": "PRO",
+        "first_purchase_bonus_pct": 37,
         "ai_optimized": True,
     },
     {
         "id": "giga_9999",
-        "name": "2.5 TH/s Giga Pack",
-        "tagline": "Industrial boost",
+        "name": "Giga Rig",
+        "tagline": "Industrial scale",
+        "offer_text": None,
         "price_usd": 99.99,
-        "hashrate_boost_ghs": 2500,
+        "original_price_usd": 133.32,
+        "hashrate_boost_ghs": 3500,
         "duration_hours": 720,
         "badge": None,
+        "first_purchase_bonus_pct": 42,
         "ai_optimized": True,
     },
     {
         "id": "titan_14999",
-        "name": "5 TH/s Titan Pack",
-        "tagline": "Premium boost",
+        "name": "Titan Rig",
+        "tagline": "Premium scale",
+        "offer_text": "Buy 1, Get 1 free",
         "price_usd": 149.99,
-        "hashrate_boost_ghs": 5000,
+        "original_price_usd": 199.99,
+        "hashrate_boost_ghs": 4700,
         "duration_hours": 720,
-        "badge": None,
+        "badge": "BOGO",
+        "first_purchase_bonus_pct": 46,
         "ai_optimized": True,
     },
     {
         "id": "colossus_19999",
-        "name": "7.5 TH/s Colossus Pack",
+        "name": "Colossus Rig",
         "tagline": "Maximum hashpower",
+        "offer_text": "Buy 1, Get 1 free",
         "price_usd": 199.99,
+        "original_price_usd": 266.65,
         "hashrate_boost_ghs": 7500,
         "duration_hours": 720,
         "badge": "FLAGSHIP",
+        "first_purchase_bonus_pct": 50,
         "ai_optimized": True,
     },
     # ------------------------------------------------------------------
     # One-time entitlement: removes interstitial ads + unlocks priority
     # support. Tracked on the User document as `ad_free=True` instead of
-    # creating a machine.
+    # creating a machine. No bonus % applies.
     # ------------------------------------------------------------------
     {
         "id": "adfree_399",
         "name": "Ad-Free + Priority Support",
         "tagline": "Remove ads · Priority queue",
+        "offer_text": None,
         "price_usd": 3.99,
+        "original_price_usd": 3.99,
         "hashrate_boost_ghs": 0,
         "duration_hours": 0,
         "badge": "UPGRADE",
+        "first_purchase_bonus_pct": 0,
         "ai_optimized": False,
-        "entitlement": "ad_free",   # marker — backend handles this specially
+        "entitlement": "ad_free",
     },
 ]
 
@@ -190,8 +248,8 @@ SHOP_PACKAGES = [
 def _enrich_package(p: Dict[str, Any]) -> Dict[str, Any]:
     """Hashrate-based package projection — Apple-safe (no ROI promises).
 
-    Returns the boost pack's hashrate gain + duration + indicative GH/s-hours.
-    No ROI calculation, no "earn $X back" — purely a virtual-hashpower spec.
+    Returns the boost pack's hashrate gain + duration + indicative GH/s-hours
+    + UI helpers (display string, original price strike-through, bonus%).
     """
     boost_ghs = p.get("hashrate_boost_ghs", 0)
     duration_hours = p.get("duration_hours", 0)
@@ -201,8 +259,38 @@ def _enrich_package(p: Dict[str, Any]) -> Dict[str, Any]:
             f"{duration_hours // 24}d" if duration_hours >= 24
             else f"{duration_hours}h"
         ) if duration_hours > 0 else "permanent",
-        "gh_s_hours": boost_ghs * duration_hours,  # indicative spec, not money
+        "gh_s_hours": boost_ghs * duration_hours,
+        "hashrate_display": (
+            f"{boost_ghs / 1000.0:.2f} TH/s" if boost_ghs >= 1000
+            else f"{boost_ghs:.0f} GH/s"
+        ),
     }
+
+
+def _current_utc_day_bucket() -> str:
+    """Day bucket keyed by 1:00 AM UTC reset boundary.
+    Returns 'YYYY-MM-DD' for the most recent 1AM-UTC tick.
+    """
+    now = now_utc()
+    # If current hour < 1, we belong to the previous day's bucket.
+    if now.hour < 1:
+        now = now - timedelta(days=1)
+    return now.strftime("%Y-%m-%d")
+
+
+def _next_1am_utc(now: Optional[datetime] = None) -> datetime:
+    """Next 1:00 AM UTC boundary from `now`."""
+    now = now or now_utc()
+    today_1am = now.replace(hour=1, minute=0, second=0, microsecond=0)
+    if now < today_1am:
+        return today_1am
+    return today_1am + timedelta(days=1)
+
+
+def _ad_reward_for_position(position_1based: int) -> float:
+    """GH/s reward for the Nth ad watched today (1-indexed)."""
+    idx = max(0, min(len(AD_REWARD_LADDER_GHS) - 1, position_1based - 1))
+    return float(AD_REWARD_LADDER_GHS[idx])
 
 
 WITHDRAW_METHODS = [
@@ -393,12 +481,12 @@ async def accrue_earnings(user_id: str) -> Dict[str, float]:
 
     Replaces the old fixed daily_yield_usd math. Sums the user's hashrate
     from active boost packs PLUS virtual hashrate granted by the daily
-    check-in and rewarded ads. Multiplies by today's share of the live
-    Bitcoin block reward, scaled by PAYOUT_MULTIPLIER (operator knob).
+    check-in and rewarded ads (24h boost per ad, summed from active rows
+    in `ad_views`). Multiplies by today's share of the live Bitcoin block
+    reward, scaled by PAYOUT_MULTIPLIER (operator knob, default 0.85x).
 
     The result is **indicative** — earnings depend on real network
-    hashrate and BTC price at accrual time. The operator controls
-    profitability through PAYOUT_MULTIPLIER (default 50.0).
+    hashrate and BTC price at accrual time.
     """
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if not user:
@@ -429,28 +517,28 @@ async def accrue_earnings(user_id: str) -> Dict[str, float]:
                 {"id": m["id"]}, {"$set": {"status": "expired"}}
             )
             continue
-        # New-style boost packs have hashrate_boost_ghs; legacy machines
-        # have hash_rate (interpret as GH/s) — both supported.
+        # New machines store hashrate_boost_ghs; legacy machines may have
+        # hash_rate (interpret as GH/s for backward compat).
         ghs = m.get("hashrate_boost_ghs") or m.get("hash_rate") or 0
         user_hashrate_ghs += float(ghs)
 
-    # Virtual hashrate from daily check-in (5 GH/s for 24h)
+    # Virtual hashrate from daily check-in (variable GH/s by ladder day, 24h boost)
     checkin_exp = user.get("checkin_hashrate_expires_at")
     if isinstance(checkin_exp, str):
         checkin_exp = datetime.fromisoformat(checkin_exp)
     if checkin_exp and checkin_exp.tzinfo is None:
         checkin_exp = checkin_exp.replace(tzinfo=timezone.utc)
     if checkin_exp and checkin_exp > now:
-        user_hashrate_ghs += 5.0
+        user_hashrate_ghs += float(user.get("checkin_hashrate_ghs", 0.0))
 
-    # Virtual hashrate from rewarded ads (0.2 GH/s per ad, valid 24h, max 30/day)
-    ad_exp = user.get("ad_hashrate_expires_at")
-    if isinstance(ad_exp, str):
-        ad_exp = datetime.fromisoformat(ad_exp)
-    if ad_exp and ad_exp.tzinfo is None:
-        ad_exp = ad_exp.replace(tzinfo=timezone.utc)
-    if ad_exp and ad_exp > now:
-        user_hashrate_ghs += float(user.get("ad_hashrate_ghs", 0.0))
+    # Virtual hashrate from rewarded ads — sum each non-expired ad view's
+    # individual reward (each ad's boost lasts 24h from earn time).
+    ad_cursor = db.ad_views.find(
+        {"user_id": user_id, "expires_at": {"$gt": now.isoformat()}},
+        {"_id": 0, "reward_ghs": 1},
+    )
+    async for av in ad_cursor:
+        user_hashrate_ghs += float(av.get("reward_ghs", 0.0))
 
     # --- Apply network math (real live values, no simulated data) ---
     try:
@@ -459,18 +547,15 @@ async def accrue_earnings(user_id: str) -> Dict[str, float]:
         net_ghs = max(1.0, stats["network_hashrate_ghs"])
         daily_btc = max(0.01, stats["daily_block_rewards_btc"])
     except Exception:
-        # Conservative defaults — preferable to crashing
         net_ghs = 600_000_000_000.0
         daily_btc = 450.0
 
-    multiplier = float(os.environ.get("PAYOUT_MULTIPLIER", "50.0"))
+    multiplier = float(os.environ.get("PAYOUT_MULTIPLIER", "0.85"))
     elapsed_seconds = max(0.0, (now - last).total_seconds())
     if elapsed_seconds == 0 or user_hashrate_ghs == 0:
         accrued_btc = 0.0
         accrued_usd = 0.0
     else:
-        # fair_share_btc_per_second = (user_ghs / net_ghs) * (daily_btc / 86400)
-        # actual = fair_share * multiplier
         fair_per_sec = (user_hashrate_ghs / net_ghs) * (daily_btc / 86400.0)
         accrued_btc = fair_per_sec * multiplier * elapsed_seconds
         accrued_usd = btc_to_usd(accrued_btc)
@@ -487,7 +572,6 @@ async def accrue_earnings(user_id: str) -> Dict[str, float]:
     )
 
     if accrued_usd > 0.00001:
-        # Aggregate indicative-earnings transaction
         await db.transactions.insert_one(
             {
                 "id": str(uuid.uuid4()),
@@ -496,7 +580,7 @@ async def accrue_earnings(user_id: str) -> Dict[str, float]:
                 "amount_usd": accrued_usd,
                 "amount_btc": accrued_btc,
                 "status": "completed",
-                "description": "Cloud mining earnings",
+                "description": "Indicative earnings",
                 "created_at": now.isoformat(),
             }
         )
@@ -548,6 +632,9 @@ def serialize_user_public(u: Dict[str, Any]) -> Dict[str, Any]:
         "auto_checkin": bool(u.get("auto_checkin", True)),
         "auto_reinvest": bool(u.get("auto_reinvest", False)),
         "auto_reinvest_min_balance_usd": float(u.get("auto_reinvest_min_balance_usd", 4.99)),
+        "checkin_streak": int(u.get("checkin_streak", 0)),
+        "checkin_hashrate_ghs": float(u.get("checkin_hashrate_ghs", 0.0)),
+        "purchased_sku_bonuses": list(u.get("purchased_sku_bonuses") or []),
     }
 
 
@@ -563,19 +650,9 @@ async def register(payload: UserCreate):
     now = now_utc()
     ref_code = gen_referral_code()
 
-    # Welcome miner — gives free trial mining for 24h
-    welcome_machine = {
-        "id": str(uuid.uuid4()),
-        "user_id": user_id,
-        "package_id": "welcome_gift",
-        "name": "Welcome Miner (Free Trial)",
-        "hash_rate": 3.0,
-        "daily_yield_usd": 0.10,
-        "duration_days": 1,
-        "purchased_at": now.isoformat(),
-        "expires_at": (now + timedelta(days=1)).isoformat(),
-        "status": "active",
-    }
+    # Build #22+ — new users start with ZERO machines. They earn hashrate
+    # via daily check-ins (free) and rewarded video ads (free) before
+    # purchasing any mining plans. Streak starts at 0.
 
     # Optional referral
     referred_by = None
@@ -611,12 +688,18 @@ async def register(payload: UserCreate):
         "lifetime_earnings_btc": 0.0,
         "last_accrual_at": now.isoformat(),
         "last_checkin_at": None,
+        "last_checkin_day_bucket": None,
         "checkin_streak": 0,
+        "checkin_hashrate_ghs": 0.0,
+        "checkin_hashrate_expires_at": None,
+        "purchased_sku_bonuses": [],
+        "cross_sell_consumed_skus": [],
+        "auto_checkin": False,  # Build #22+: ladder is manual to preserve UX
+        "auto_reinvest": False,
         "created_at": now.isoformat(),
     }
 
     await db.users.insert_one(user_doc)
-    await db.machines.insert_one(welcome_machine)
 
     user_public = serialize_user_public(user_doc)
     token = create_access_token(user_id, email)
@@ -767,8 +850,8 @@ async def buy_package(
             },
         }
 
-    def _make_machine(suffix: str = "") -> Dict[str, Any]:
-        boost_ghs = pkg.get("hashrate_boost_ghs", 0)
+    def _make_machine(suffix: str = "", bonus_ghs: float = 0.0) -> Dict[str, Any]:
+        boost_ghs = pkg.get("hashrate_boost_ghs", 0) + bonus_ghs
         duration_h = pkg.get("duration_hours", 720)
         return {
             "id": str(uuid.uuid4()),
@@ -776,16 +859,33 @@ async def buy_package(
             "package_id": pkg["id"],
             "name": pkg["name"] + suffix,
             "hashrate_boost_ghs": boost_ghs,
-            "hash_rate": boost_ghs,  # backward-compat with old UI fields
+            "hash_rate": boost_ghs,  # backward-compat
             "duration_hours": duration_h,
             "purchased_at": now.isoformat(),
             "expires_at": (now + timedelta(hours=duration_h)).isoformat(),
             "status": "active",
         }
 
-    machines_added = [_make_machine()]
+    # ------------------------------------------------------------------
+    # One-time first-purchase bonus (15→50% linear ladder).
+    # Applied ONLY on the first time this user buys this SKU. The user's
+    # `purchased_sku_bonuses` array tracks consumed bonuses.
+    # ------------------------------------------------------------------
+    user_doc = await db.users.find_one({"id": current_user["id"]}, {"_id": 0}) or {}
+    consumed_bonuses = list(user_doc.get("purchased_sku_bonuses") or [])
+    bonus_pct = float(pkg.get("first_purchase_bonus_pct") or 0)
+    apply_bonus = bonus_pct > 0 and (pkg["id"] not in consumed_bonuses)
+    bonus_ghs = (pkg.get("hashrate_boost_ghs", 0) * bonus_pct / 100.0) if apply_bonus else 0.0
+
+    machines_added = [_make_machine(bonus_ghs=bonus_ghs)]
 
     await db.machines.insert_many(machines_added)
+
+    if apply_bonus:
+        await db.users.update_one(
+            {"id": current_user["id"]},
+            {"$addToSet": {"purchased_sku_bonuses": pkg["id"]}},
+        )
 
     await db.transactions.insert_one(
         {
@@ -795,7 +895,13 @@ async def buy_package(
             "amount_usd": pkg["price_usd"],
             "amount_btc": 0.0,
             "status": "completed",
-            "description": f"Purchased {pkg['name']}" + (" (BOGO)" if pkg.get("bogo") else ""),
+            "description": (
+                f"Purchased {pkg['name']}"
+                + (f" + first-time bonus +{bonus_pct:.0f}% (+{bonus_ghs:.1f} GH/s)" if apply_bonus else "")
+            ),
+            "package_id": pkg["id"],
+            "bonus_pct_applied": bonus_pct if apply_bonus else 0.0,
+            "bonus_ghs_applied": bonus_ghs,
             "apple_transaction_id": payload.apple_transaction_id,
             "apple_environment": apple_info.get("environment"),
             "apple_mocked": bool(apple_info.get("_mocked")),
@@ -806,6 +912,9 @@ async def buy_package(
     return {
         "success": True,
         "machines_added": len(machines_added),
+        "first_purchase_bonus_applied": apply_bonus,
+        "bonus_pct": bonus_pct if apply_bonus else 0.0,
+        "bonus_ghs": round(bonus_ghs, 2),
         "package": pkg,
         "apple": {
             "verified": not apple_info.get("_mocked", True),
@@ -817,17 +926,20 @@ async def buy_package(
 # ---------------------------- Routes: Withdraw ----------------------------
 @api.get("/withdraw/methods")
 async def withdraw_methods(current_user: Dict[str, Any] = Depends(get_current_user)):
-    # Operator privilege — admins withdraw any amount at any time at 0% fee.
-    # Build #14 ask: keep regular users on the 150k sats / 10% rules but
-    # allow the operator account to drain commission balances freely.
+    """Returns redeem limits + fee + cooldown for the Earnings → Redeem flow.
+
+    Admins bypass all limits (1 sat min, 0 fee, no cooldown) so they can
+    drain commission balances freely.
+    """
     if current_user.get("is_admin"):
         return {
             "methods": WITHDRAW_METHODS,
-            "min_sats": 1,                 # 1 sat — effectively unrestricted
-            "max_sats": MAX_WITHDRAW_SATS,
-            "max_daily_sats": MAX_DAILY_WITHDRAW_SATS,
+            "min_sats": 1,
+            "max_sats": 10_000_000,
+            "max_daily_sats": 10_000_000,
             "fee_pct": 0.0,
             "fee_flat_sats": 0,
+            "cooldown_hours": 0,
             "btc_usd_rate": get_btc_usd_rate(),
             "admin_unlimited": True,
         }
@@ -836,10 +948,94 @@ async def withdraw_methods(current_user: Dict[str, Any] = Depends(get_current_us
         "min_sats": MIN_WITHDRAW_SATS,
         "max_sats": MAX_WITHDRAW_SATS,
         "max_daily_sats": MAX_DAILY_WITHDRAW_SATS,
-        "fee_pct": WITHDRAW_FEE_PCT,
+        "fee_pct": 0.0,
         "fee_flat_sats": WITHDRAW_FEE_FLAT_SATS,
+        "cooldown_hours": REDEEM_COOLDOWN_HOURS,
         "btc_usd_rate": get_btc_usd_rate(),
         "admin_unlimited": False,
+    }
+
+
+class RedeemQuoteRequest(BaseModel):
+    amount_sats: int = Field(gt=0, le=10_000_000)
+
+
+@api.post("/redeem/quote")
+async def redeem_quote(
+    payload: RedeemQuoteRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Pre-flight fee/balance preview for the Redeem confirmation modal.
+
+    Returns the fee, total debit, remaining balance, and warnings without
+    actually triggering a payout. Apple-safe: no fee is hidden from the user.
+    """
+    is_admin_caller = bool(current_user.get("is_admin"))
+    amount_sats = int(payload.amount_sats)
+
+    min_s = 1 if is_admin_caller else MIN_WITHDRAW_SATS
+    max_s = 10_000_000 if is_admin_caller else MAX_WITHDRAW_SATS
+    fee_sats = 0 if is_admin_caller else WITHDRAW_FEE_FLAT_SATS
+
+    errors: List[str] = []
+    if amount_sats < min_s:
+        errors.append(f"Minimum redeem is {min_s:,} sats.")
+    if amount_sats > max_s:
+        errors.append(f"Maximum redeem is {max_s:,} sats.")
+
+    await accrue_earnings(current_user["id"])
+    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
+    balance_sats = btc_to_sats(float(user.get("balance_btc", 0.0)))
+    total_debit = amount_sats + fee_sats
+
+    if total_debit > balance_sats:
+        errors.append(
+            f"Insufficient balance. You need {total_debit:,} sats ({amount_sats:,} + {fee_sats} fee) "
+            f"but have {balance_sats:,} sats."
+        )
+
+    # 24h cooldown check
+    cooldown_remaining_seconds = 0
+    if not is_admin_caller and REDEEM_COOLDOWN_HOURS > 0:
+        last = await db.transactions.find_one(
+            {
+                "user_id": current_user["id"],
+                "type": "withdrawal",
+                "status": {"$in": ["completed", "pending", "in_progress"]},
+            },
+            sort=[("created_at", -1)],
+        )
+        if last:
+            try:
+                last_at = datetime.fromisoformat(last["created_at"])
+                if last_at.tzinfo is None:
+                    last_at = last_at.replace(tzinfo=timezone.utc)
+                next_at = last_at + timedelta(hours=REDEEM_COOLDOWN_HOURS)
+                if now_utc() < next_at:
+                    cooldown_remaining_seconds = int((next_at - now_utc()).total_seconds())
+                    errors.append(
+                        f"Only one redeem per {REDEEM_COOLDOWN_HOURS} hours. "
+                        f"Try again in {cooldown_remaining_seconds // 3600}h {(cooldown_remaining_seconds % 3600) // 60}m."
+                    )
+            except Exception:
+                pass
+
+    return {
+        "ok": len(errors) == 0,
+        "amount_sats": amount_sats,
+        "fee_sats": fee_sats,
+        "total_debit_sats": total_debit,
+        "balance_sats": balance_sats,
+        "remaining_balance_sats": max(0, balance_sats - total_debit),
+        "amount_btc": sats_to_btc(amount_sats),
+        "fee_btc": sats_to_btc(fee_sats),
+        "amount_usd": round(btc_to_usd(sats_to_btc(amount_sats)), 4),
+        "fee_usd": round(btc_to_usd(sats_to_btc(fee_sats)), 4),
+        "cooldown_hours": REDEEM_COOLDOWN_HOURS,
+        "cooldown_remaining_seconds": cooldown_remaining_seconds,
+        "min_sats": min_s,
+        "max_sats": max_s,
+        "errors": errors,
     }
 
 
@@ -848,29 +1044,30 @@ async def withdraw(
     payload: WithdrawRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
+    """Lightning redeem — instant payout via Blink. Fee deducted from balance.
+    Once per REDEEM_COOLDOWN_HOURS for non-admin users.
+    """
     method = next((m for m in WITHDRAW_METHODS if m["id"] == payload.method_id), None)
     if not method:
-        raise HTTPException(status_code=400, detail="Lightning is the only supported withdrawal method")
+        raise HTTPException(status_code=400, detail="Lightning is the only supported redeem method")
 
-    # Build #14 — admins bypass the 150k sats minimum AND the 10% fee.
-    # Regular users still hit MIN_WITHDRAW_SATS + 10% fee unchanged.
     is_admin_caller = bool(current_user.get("is_admin"))
-
     amount_sats = int(payload.amount_sats)
     if amount_sats < 1:
         raise HTTPException(status_code=400, detail="Amount must be at least 1 sat.")
-    if not is_admin_caller and amount_sats < MIN_WITHDRAW_SATS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Minimum withdrawal is {MIN_WITHDRAW_SATS:,} sats ({MIN_WITHDRAW_SATS / SATS_PER_BTC:.8f} BTC)",
-        )
-    if amount_sats > MAX_WITHDRAW_SATS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Maximum withdrawal is {MAX_WITHDRAW_SATS:,} sats ({MAX_WITHDRAW_SATS / SATS_PER_BTC:.8f} BTC)",
-        )
+    if not is_admin_caller:
+        if amount_sats < MIN_WITHDRAW_SATS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Minimum redeem is {MIN_WITHDRAW_SATS:,} sats ({MIN_WITHDRAW_SATS / SATS_PER_BTC:.8f} BTC).",
+            )
+        if amount_sats > MAX_WITHDRAW_SATS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Maximum redeem is {MAX_WITHDRAW_SATS:,} sats ({MAX_WITHDRAW_SATS / SATS_PER_BTC:.8f} BTC).",
+            )
 
-    fee_sats = 0 if is_admin_caller else withdrawal_fee_sats(amount_sats)
+    fee_sats = 0 if is_admin_caller else WITHDRAW_FEE_FLAT_SATS
     total_debit_sats = amount_sats + fee_sats
     amount_btc = sats_to_btc(amount_sats)
     fee_btc = sats_to_btc(fee_sats)
@@ -883,50 +1080,53 @@ async def withdraw(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Insufficient balance. Need {total_debit_sats} sats "
-                f"({amount_sats} sats + {fee_sats} sats fee), have "
-                f"{btc_to_sats(balance_btc)} sats."
+                f"Insufficient balance. Need {total_debit_sats:,} sats "
+                f"({amount_sats:,} sats + {fee_sats} sats fee), have "
+                f"{btc_to_sats(balance_btc):,} sats."
             ),
         )
 
-    # 24h withdraw cap (counts paid amount, fees excluded so a user can always pay fees).
-    yesterday = (now_utc() - timedelta(hours=24)).isoformat()
-    cursor = db.transactions.find(
-        {
-            "user_id": current_user["id"],
-            "type": "withdrawal",
-            "status": {"$in": ["completed", "pending", "in_progress"]},
-            "created_at": {"$gte": yesterday},
-        },
-        {"_id": 0, "amount_sats": 1},
-    )
-    spent_sats = 0
-    async for t in cursor:
-        spent_sats += int(t.get("amount_sats") or 0)
-    if spent_sats + amount_sats > MAX_DAILY_WITHDRAW_SATS:
-        remaining = max(0, MAX_DAILY_WITHDRAW_SATS - spent_sats)
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"24h withdrawal cap is {MAX_DAILY_WITHDRAW_SATS} sats. "
-                f"Remaining: {remaining} sats."
-            ),
+    # 24h cooldown — once per cooldown window. Skip for admin.
+    if not is_admin_caller and REDEEM_COOLDOWN_HOURS > 0:
+        last = await db.transactions.find_one(
+            {
+                "user_id": current_user["id"],
+                "type": "withdrawal",
+                "status": {"$in": ["completed", "pending", "in_progress"]},
+            },
+            sort=[("created_at", -1)],
         )
+        if last:
+            try:
+                last_at = datetime.fromisoformat(last["created_at"])
+                if last_at.tzinfo is None:
+                    last_at = last_at.replace(tzinfo=timezone.utc)
+                next_at = last_at + timedelta(hours=REDEEM_COOLDOWN_HOURS)
+                if now_utc() < next_at:
+                    remaining = int((next_at - now_utc()).total_seconds())
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Only one redeem per {REDEEM_COOLDOWN_HOURS} hours. "
+                            f"Try again in {remaining // 3600}h {(remaining % 3600) // 60}m."
+                        ),
+                    )
+            except HTTPException:
+                raise
+            except Exception:
+                pass
 
-    # Reserve the balance (amount + fee) up-front so concurrent withdrawals can't double-spend.
+    # Reserve balance up-front so concurrent calls can't double-spend.
     await db.users.update_one(
         {"id": current_user["id"]}, {"$inc": {"balance_btc": -total_debit_btc}}
     )
 
-    # ------------------------------------------------------------------
-    # Blink Wallet payout (real Lightning).
-    # If the call fails, we refund the full reserved amount (incl. fee).
-    # ------------------------------------------------------------------
+    # Real Lightning payout via Blink (instant). Refund full debit on failure.
     try:
         payout = blink_create_payout(
-            amount_usd=round(btc_to_usd(amount_btc), 6),  # informational
+            amount_usd=round(btc_to_usd(amount_btc), 6),
             destination=payload.address,
-            description="Hashrate Cloud Miner withdrawal",
+            description="Hashrate Cloud Miner redeem",
         )
     except Exception as e:
         await db.users.update_one(
@@ -949,7 +1149,7 @@ async def withdraw(
         "status": payout.get("status", "pending"),
         "method": method["name"],
         "address": payload.address,
-        "description": "Lightning withdrawal",
+        "description": "Lightning redeem",
         "blink_provider": payout.get("provider"),
         "blink_payout_id": payout.get("payout_id"),
         "blink_state": payout.get("blink_state"),
@@ -1000,64 +1200,92 @@ async def transactions(
     return {"transactions": items}
 
 
-# ---------------------------- Routes: Daily check-in ----------------------------
-@api.get("/daily-checkin/status")
-async def checkin_status(current_user: Dict[str, Any] = Depends(get_current_user)):
-    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
+# ---------------------------- Routes: Daily check-in (Build #22+) ----------------------------
+# 7-day progressive ladder, GH/s reward for 24h boost. Resets at 1:00 AM UTC.
+# Streak resets to Day 1 on missed day.
+def _checkin_state(user: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute the user's current check-in availability + next step in ladder."""
+    now = now_utc()
     last = user.get("last_checkin_at")
     last_dt = None
     if last:
         last_dt = datetime.fromisoformat(last) if isinstance(last, str) else last
         if last_dt.tzinfo is None:
             last_dt = last_dt.replace(tzinfo=timezone.utc)
-    now = now_utc()
-    available = (last_dt is None) or ((now - last_dt) >= timedelta(hours=20))
-    next_at = last_dt + timedelta(hours=20) if last_dt else now
+
+    streak = int(user.get("checkin_streak", 0))
+    today_bucket = _current_utc_day_bucket()
+    last_bucket = (user.get("last_checkin_day_bucket") or "")
+
+    # Available if user has NOT checked in today's bucket.
+    available = (last_bucket != today_bucket)
+
+    # If user missed a day → reset to Day 1 next claim.
+    next_step = 1
+    if available:
+        if not last_dt:
+            next_step = 1
+        else:
+            # Compute number of bucket-days since last check-in.
+            try:
+                last_bucket_dt = datetime.strptime(last_bucket, "%Y-%m-%d").replace(tzinfo=timezone.utc) if last_bucket else None
+            except Exception:
+                last_bucket_dt = None
+            today_bucket_dt = datetime.strptime(today_bucket, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            days_gap = (today_bucket_dt - last_bucket_dt).days if last_bucket_dt else 999
+            if days_gap == 1 and streak < 7:
+                next_step = streak + 1
+            elif days_gap == 1 and streak >= 7:
+                next_step = 1  # cycle restart after Day 7
+            else:
+                next_step = 1  # streak broken
+
+    next_reward_ghs = DAILY_CHECKIN_LADDER_GHS[next_step - 1]
+    next_at = _next_1am_utc(now)
+
     return {
         "available": available,
-        "streak": int(user.get("checkin_streak", 0)),
-        "reward_usd": DAILY_CHECKIN_REWARD_USD,
-        "next_available_at": next_at.isoformat() if next_at else None,
+        "streak": streak,
+        "next_step": next_step,
+        "ladder_ghs": DAILY_CHECKIN_LADDER_GHS,
+        "next_reward_ghs": next_reward_ghs,
+        "boost_duration_hours": CHECKIN_BOOST_DURATION_HOURS,
+        "next_available_at": next_at.isoformat(),
     }
+
+
+@api.get("/daily-checkin/status")
+async def checkin_status(current_user: Dict[str, Any] = Depends(get_current_user)):
+    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
+    return _checkin_state(user)
 
 
 @api.post("/daily-checkin", response_model=CheckinResponse)
 async def daily_checkin(current_user: Dict[str, Any] = Depends(get_current_user)):
     user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
-    last = user.get("last_checkin_at")
-    now = now_utc()
-    last_dt = None
-    if last:
-        last_dt = datetime.fromisoformat(last) if isinstance(last, str) else last
-        if last_dt.tzinfo is None:
-            last_dt = last_dt.replace(tzinfo=timezone.utc)
+    state = _checkin_state(user)
 
-    if last_dt and (now - last_dt) < timedelta(hours=20):
-        next_at = last_dt + timedelta(hours=20)
+    if not state["available"]:
         raise HTTPException(
             status_code=400,
-            detail=f"Check in again at {next_at.isoformat()}",
+            detail=f"Check in again at {state['next_available_at']}",
         )
 
-    new_streak = int(user.get("checkin_streak", 0)) + 1
-    if last_dt and (now - last_dt) > timedelta(hours=48):
-        new_streak = 1  # streak broken
-
-    # Hashrate Cloud Miner (Build #22+): daily check-in grants 5 GH/s
-    # of virtual hashrate for 24 hours. Streak still tracked for engagement
-    # mechanics but no longer pays a fixed USD reward (Apple-safe).
-    reward_usd = 0.0
-    reward_btc = 0.0
-    checkin_ghs_window_end = now + timedelta(hours=24)
+    now = now_utc()
+    new_step = int(state["next_step"])
+    reward_ghs = float(state["next_reward_ghs"])
+    today_bucket = _current_utc_day_bucket()
+    boost_expires = now + timedelta(hours=CHECKIN_BOOST_DURATION_HOURS)
 
     await db.users.update_one(
         {"id": current_user["id"]},
         {
             "$set": {
                 "last_checkin_at": now.isoformat(),
-                "checkin_streak": new_streak,
-                "checkin_hashrate_ghs": 5.0,
-                "checkin_hashrate_expires_at": checkin_ghs_window_end.isoformat(),
+                "last_checkin_day_bucket": today_bucket,
+                "checkin_streak": new_step,
+                "checkin_hashrate_ghs": reward_ghs,
+                "checkin_hashrate_expires_at": boost_expires.isoformat(),
             },
         },
     )
@@ -1066,19 +1294,21 @@ async def daily_checkin(current_user: Dict[str, Any] = Depends(get_current_user)
         {
             "id": str(uuid.uuid4()),
             "user_id": current_user["id"],
-            "type": "bonus",
+            "type": "checkin",
             "amount_usd": 0.0,
             "amount_btc": 0.0,
             "status": "completed",
-            "description": f"Daily check-in: +5 GH/s for 24h (streak {new_streak})",
+            "description": f"Daily check-in Day {new_step}: +{reward_ghs} GH/s for 24h",
+            "reward_ghs": reward_ghs,
+            "step": new_step,
             "created_at": now.isoformat(),
         }
     )
 
     return CheckinResponse(
         awarded_usd=0.0,
-        streak=new_streak,
-        next_available_at=now + timedelta(hours=20),
+        streak=new_step,
+        next_available_at=_next_1am_utc(now),
     )
 
 
@@ -1121,8 +1351,10 @@ async def admob_ssv_callback(request: Request):
     """Google AdMob server-side verification callback.
 
     Apple-safe pattern: ad revenue funds the user's hashrate boost, NOT
-    the user's IAP. Each verified callback grants the user 0.2 GH/s for
-    24 hours (capped at 30 ads/day → 6 GH/s/day from ads alone).
+    the user's IAP. Each verified callback grants a progressive GH/s reward
+    based on the user's ad count today (1-5: 1.5 GH/s, 6-10: 3.0, 11-15: 5.0,
+    16-20: 7.0, 21-25: 9.5, 26-30: 12.0 GH/s). Max 30 ads/day, resets at
+    1:00 AM UTC. Each ad's boost lasts 24h independently.
 
     Idempotent on `transaction_id` (ad_view_id). Returns 200 on success
     so AdMob doesn't retry, including for duplicates.
@@ -1146,57 +1378,116 @@ async def admob_ssv_callback(request: Request):
     except Exception:
         pass
 
-    # custom_data is set by the iOS client to user_id when requesting the ad
     user_id = params.get("custom_data") or params.get("user_id")
     if not user_id:
         logger.warning("admob SSV: no user_id/custom_data")
         return {"status": "rejected", "reason": "no_user"}
 
-    # Idempotency check
     existing = await db.ad_views.find_one({"transaction_id": tx_id}, {"_id": 0})
     if existing:
         return {"status": "ok", "reason": "duplicate"}
 
-    # Daily cap (30 ads/user/day)
     now = now_utc()
-    today = now.strftime("%Y-%m-%d")
+    bucket = _current_utc_day_bucket()
     daily_count = await db.ad_views.count_documents({
-        "user_id": user_id, "date": today,
+        "user_id": user_id, "day_bucket": bucket,
     })
-    if daily_count >= 30:
+    if daily_count >= AD_DAILY_CAP:
         return {"status": "rejected", "reason": "daily_cap"}
 
-    # Record the ad view + extend the user's ad hashrate window
+    position = daily_count + 1
+    reward_ghs = _ad_reward_for_position(position)
+    expires_at = now + timedelta(hours=AD_BOOST_DURATION_HOURS)
+
     await db.ad_views.insert_one({
         "transaction_id": tx_id,
         "user_id": user_id,
-        "date": today,
+        "day_bucket": bucket,
+        "date": now.strftime("%Y-%m-%d"),
+        "position": position,
+        "reward_ghs": reward_ghs,
         "created_at": now.isoformat(),
+        "expires_at": expires_at.isoformat(),
     })
-    # Each ad: +0.2 GH/s for 24h. Stacks up to 30 ads = 6 GH/s max.
-    new_total = (daily_count + 1) * 0.2
-    await db.users.update_one(
-        {"id": user_id},
-        {"$set": {
-            "ad_hashrate_ghs": new_total,
-            "ad_hashrate_expires_at": (now + timedelta(hours=24)).isoformat(),
-        }},
-    )
-    return {"status": "ok", "reward_ghs": 0.2, "total_ghs_today": new_total}
+    return {
+        "status": "ok",
+        "reward_ghs": reward_ghs,
+        "position": position,
+        "daily_cap": AD_DAILY_CAP,
+        "boost_duration_hours": AD_BOOST_DURATION_HOURS,
+    }
+
+
+@api.post("/ads/claim_dev")
+async def ads_claim_dev(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Dev/Test endpoint — manually credit a rewarded-ad reward.
+
+    On production iOS builds the real AdMob SDK fires `/api/ads/ssv_callback`
+    automatically. This endpoint exists so the in-app "Watch ad" button can
+    locally grant the reward when SSV isn't yet wired (e.g. simulator, web).
+    Subject to the same 30/day cap and 1AM UTC reset.
+    """
+    user_id = current_user["id"]
+    now = now_utc()
+    bucket = _current_utc_day_bucket()
+    daily_count = await db.ad_views.count_documents({
+        "user_id": user_id, "day_bucket": bucket,
+    })
+    if daily_count >= AD_DAILY_CAP:
+        raise HTTPException(
+            status_code=400,
+            detail=f"You've watched all {AD_DAILY_CAP} rewarded ads available today.",
+        )
+    position = daily_count + 1
+    reward_ghs = _ad_reward_for_position(position)
+    expires_at = now + timedelta(hours=AD_BOOST_DURATION_HOURS)
+    await db.ad_views.insert_one({
+        "transaction_id": f"dev-{uuid.uuid4().hex}",
+        "user_id": user_id,
+        "day_bucket": bucket,
+        "date": now.strftime("%Y-%m-%d"),
+        "position": position,
+        "reward_ghs": reward_ghs,
+        "created_at": now.isoformat(),
+        "expires_at": expires_at.isoformat(),
+        "source": "dev",
+    })
+    return {
+        "ok": True,
+        "reward_ghs": reward_ghs,
+        "position": position,
+        "remaining_today": AD_DAILY_CAP - position,
+    }
 
 
 @api.get("/ads/status")
 async def ads_status(current_user: Dict[str, Any] = Depends(get_current_user)):
-    """How many ads the user has watched today + current ad-boosted hashrate."""
-    today = now_utc().strftime("%Y-%m-%d")
+    """How many ads the user has watched in the current day-bucket + total
+    active ad-boosted hashrate."""
+    now = now_utc()
+    bucket = _current_utc_day_bucket()
     n = await db.ad_views.count_documents({
-        "user_id": current_user["id"], "date": today,
+        "user_id": current_user["id"], "day_bucket": bucket,
     })
+    # Sum active ad rewards
+    active_ghs = 0.0
+    cur = db.ad_views.find(
+        {"user_id": current_user["id"], "expires_at": {"$gt": now.isoformat()}},
+        {"_id": 0, "reward_ghs": 1},
+    )
+    async for v in cur:
+        active_ghs += float(v.get("reward_ghs", 0.0))
+
+    next_pos = min(n + 1, AD_DAILY_CAP)
+    next_reward = _ad_reward_for_position(next_pos) if n < AD_DAILY_CAP else 0.0
+
     return {
         "ads_today": n,
-        "daily_cap": 30,
-        "ad_hashrate_ghs": float(current_user.get("ad_hashrate_ghs", 0.0)),
-        "ad_hashrate_expires_at": current_user.get("ad_hashrate_expires_at"),
+        "daily_cap": AD_DAILY_CAP,
+        "remaining_today": max(0, AD_DAILY_CAP - n),
+        "active_ad_hashrate_ghs": round(active_ghs, 2),
+        "next_reward_ghs": next_reward,
+        "boost_duration_hours": AD_BOOST_DURATION_HOURS,
     }
 
 
@@ -2081,6 +2372,371 @@ async def admin_fees_reinvest(
     }
 
 
+# ---------------------------- Store: cross-sell banner (Build #22+) ----------------------------
+async def _user_total_hashrate_ghs(user_id: str, user: Optional[Dict[str, Any]] = None) -> float:
+    """Sum the user's active hashrate from packs + check-in + ads (live)."""
+    if user is None:
+        user = await db.users.find_one({"id": user_id}, {"_id": 0}) or {}
+    now = now_utc()
+    total = 0.0
+    cursor = db.machines.find({"user_id": user_id, "status": "active"}, {"_id": 0})
+    async for m in cursor:
+        exp = m.get("expires_at")
+        if isinstance(exp, str):
+            try:
+                exp = datetime.fromisoformat(exp)
+            except Exception:
+                exp = None
+        if exp and exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp and exp < now:
+            continue
+        total += float(m.get("hashrate_boost_ghs") or m.get("hash_rate") or 0.0)
+
+    # Check-in boost (if still active)
+    cexp = user.get("checkin_hashrate_expires_at")
+    if isinstance(cexp, str):
+        try:
+            cexp = datetime.fromisoformat(cexp)
+        except Exception:
+            cexp = None
+    if cexp and cexp.tzinfo is None:
+        cexp = cexp.replace(tzinfo=timezone.utc)
+    if cexp and cexp > now:
+        total += float(user.get("checkin_hashrate_ghs", 0.0))
+
+    # Ads — sum still-active ad views
+    cur = db.ad_views.find(
+        {"user_id": user_id, "expires_at": {"$gt": now.isoformat()}},
+        {"_id": 0, "reward_ghs": 1},
+    )
+    async for av in cur:
+        total += float(av.get("reward_ghs", 0.0))
+    return total
+
+
+@api.get("/store/cross-sell")
+async def store_cross_sell(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Dynamic cross-sell banner — mirrors a +100% boost on the user's
+    current hashrate, marketed at 25% off.
+
+    Logic:
+      1. Compute user's current total active hashrate H (in GH/s).
+      2. Find the smallest mining SKU whose hashrate_boost_ghs >= max(H, 50).
+         (Floor 50 GH/s so brand-new users get a real banner.)
+      3. Skip SKUs the user has already purchased the one-time cross-sell
+         escalation for (`cross_sell_consumed_skus`) so the banner steps up.
+      4. Marketing display: actual SKU price, plus original_price_usd
+         strike-through (~33% higher → 25% off illusion).
+      5. If no SKU is bigger → return null (max tier reached).
+    """
+    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0}) or {}
+    consumed = set(user.get("cross_sell_consumed_skus") or [])
+    H = await _user_total_hashrate_ghs(current_user["id"], user)
+    target_ghs = max(H * 2.0, 50.0)
+
+    candidates = [
+        p for p in SHOP_PACKAGES
+        if p.get("hashrate_boost_ghs", 0) > 0 and p["id"] not in consumed
+    ]
+    candidates.sort(key=lambda p: p["hashrate_boost_ghs"])
+    pick = None
+    for p in candidates:
+        if p["hashrate_boost_ghs"] >= target_ghs:
+            pick = p
+            break
+    if not pick:
+        pick = candidates[-1] if candidates else None
+
+    if not pick:
+        return {
+            "available": False,
+            "reason": "max_tier_reached",
+            "user_hashrate_ghs": H,
+        }
+
+    return {
+        "available": True,
+        "user_hashrate_ghs": round(H, 2),
+        "package": _enrich_package(pick),
+        "headline": "+100%!! More Computing Power",
+        "price_label": f"${pick['price_usd']:.2f}!",
+        "original_price_label": f"${pick['original_price_usd']:.2f}",
+        "discount_pct": CROSS_SELL_DISCOUNT_PCT,
+        "cta": "Boost Now",
+    }
+
+
+# ---------------------------- Admin: profitability knobs ----------------------------
+@api.get("/admin/config")
+async def admin_config_get(current_admin: Dict[str, Any] = Depends(get_current_admin)):
+    """Read all profitability knobs. These come from env vars by default
+    but can be overridden by writing to admin_config collection."""
+    overrides = await db.admin_config.find_one({"id": "global"}, {"_id": 0}) or {}
+    return {
+        "payout_multiplier": float(overrides.get("payout_multiplier", PAYOUT_MULTIPLIER)),
+        "redeem_fee_sats": int(overrides.get("redeem_fee_sats", WITHDRAW_FEE_FLAT_SATS)),
+        "redeem_min_sats": int(overrides.get("redeem_min_sats", MIN_WITHDRAW_SATS)),
+        "redeem_max_sats": int(overrides.get("redeem_max_sats", MAX_WITHDRAW_SATS)),
+        "redeem_cooldown_hours": int(overrides.get("redeem_cooldown_hours", REDEEM_COOLDOWN_HOURS)),
+        "ad_daily_cap": int(overrides.get("ad_daily_cap", AD_DAILY_CAP)),
+        "cross_sell_discount_pct": int(overrides.get("cross_sell_discount_pct", CROSS_SELL_DISCOUNT_PCT)),
+        "checkin_ladder_ghs": list(overrides.get("checkin_ladder_ghs", DAILY_CHECKIN_LADDER_GHS)),
+        "ad_reward_ladder_ghs": list(overrides.get("ad_reward_ladder_ghs", AD_REWARD_LADDER_GHS)),
+        "support_email": str(overrides.get("support_email", SUPPORT_EMAIL)),
+        "_overridden_keys": list(overrides.keys()) if overrides else [],
+    }
+
+
+class AdminConfigPatch(BaseModel):
+    payout_multiplier: Optional[float] = None
+    redeem_fee_sats: Optional[int] = None
+    redeem_min_sats: Optional[int] = None
+    redeem_max_sats: Optional[int] = None
+    redeem_cooldown_hours: Optional[int] = None
+    ad_daily_cap: Optional[int] = None
+    cross_sell_discount_pct: Optional[int] = None
+    support_email: Optional[str] = None
+
+
+@api.patch("/admin/config")
+async def admin_config_patch(
+    payload: AdminConfigPatch,
+    current_admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    upd: Dict[str, Any] = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if upd:
+        await db.admin_config.update_one(
+            {"id": "global"}, {"$set": {"id": "global", **upd}}, upsert=True
+        )
+        await db.admin_audit.insert_one({
+            "id": str(uuid.uuid4()),
+            "admin_id": current_admin["id"],
+            "admin_email": current_admin["email"],
+            "action": "config.patch",
+            "patch": upd,
+            "created_at": now_utc().isoformat(),
+        })
+        # Apply mutable env-style knobs in-process where safe
+        for k, v in upd.items():
+            if k == "payout_multiplier":
+                os.environ["PAYOUT_MULTIPLIER"] = str(v)
+    return await admin_config_get(current_admin=current_admin)
+
+
+# ---------------------------- FAQs (Build #22+) ----------------------------
+SEEDED_FAQS: List[Dict[str, Any]] = [
+    {"id": "faq_what_is_hashrate", "q": "What is hashrate in this app?",
+     "a": "Hashrate is virtual computing power expressed in GH/s (gigahash per second). Higher hashrate produces higher indicative earnings. You earn hashrate from daily check-ins, rewarded ads, and one-time hashrate boost purchases."},
+    {"id": "faq_daily_checkin", "q": "How does the daily check-in work?",
+     "a": "Tap Claim each day to receive a hashrate boost that grows across 7 days: Day 1 = 1.2 GH/s, all the way up to Day 7 = 8.0 GH/s. Each boost lasts 24 hours. Miss a day and your streak resets to Day 1."},
+    {"id": "faq_rewarded_ads", "q": "How do rewarded ads work?",
+     "a": "Watch short rewarded video ads to earn hashrate boosts. The reward scales as you watch more: 1.5 GH/s for the first few, up to 12.0 GH/s for later ones. You can watch up to 30 ads per day. Each ad's boost lasts 24 hours."},
+    {"id": "faq_indicative_earnings", "q": "What are 'indicative earnings'?",
+     "a": "Your indicative earnings are an estimate based on your virtual hashrate's share of the live Bitcoin network. Hashrate Cloud Miner does NOT hold or manage your assets and is not a wallet, trading platform, or fund manager. Earnings shown are illustrative and final amounts depend on server records."},
+    {"id": "faq_how_to_redeem", "q": "How do I redeem my earnings?",
+     "a": "Open the Earnings tab → tap Redeem → select Lightning → paste your Lightning invoice or address (e.g. user@speed.app, user@zbd.gg, or a BOLT11 invoice starting with 'lnbc') → enter amount → confirm. Payouts are processed instantly through the Lightning Network."},
+    {"id": "faq_redeem_minimum", "q": "What is the minimum redeem amount?",
+     "a": "The minimum redeem is 25,000 sats and the maximum is 50,000 sats per request. You can redeem once every 24 hours."},
+    {"id": "faq_redeem_fees", "q": "Are there fees on redemption?",
+     "a": "A small Lightning Network fee is deducted from your balance at redeem time to cover routing costs. You will see the exact fee, total deduction, and your remaining balance in the confirmation modal before you tap Redeem."},
+    {"id": "faq_24h_cooldown", "q": "Why is there a 24-hour cooldown on redeeming?",
+     "a": "To keep the Lightning Network healthy and prevent abuse, each user can submit one redeem request per 24 hours. The cooldown starts the moment your redeem is broadcast."},
+    {"id": "faq_iap_bonus", "q": "What is the one-time hashrate boost bonus?",
+     "a": "Every mining plan grants a one-time free hashrate bonus on your FIRST purchase of that plan: starting at +15% on the entry tier and going up to +50% on the flagship Colossus Rig. The bonus stacks with the plan's base hashrate."},
+    {"id": "faq_cross_sell", "q": "What is the +100% More Computing Power banner?",
+     "a": "It's a dynamic offer that mirrors your current hashrate at a 25% discount. Tap it to double your active hashrate. Each time you purchase the banner offer, the next-tier-up SKU appears at the same 25% discount."},
+    {"id": "faq_safety", "q": "Is my account safe?",
+     "a": "Yes. We don't hold your private keys, your seed phrase, or any on-chain assets. You provide your own Lightning wallet address at redeem time, so funds always flow directly to a wallet you control."},
+    {"id": "faq_login_issues", "q": "I can't sign in. What do I do?",
+     "a": "Double-check your email and password. If you're stuck, send a message to support from this chat and the team will help you. Premium users (any active mining plan) get priority response."},
+    {"id": "faq_appstore_iap", "q": "How do in-app purchases work?",
+     "a": "Mining plans are billed by Apple via standard In-App Purchase. You'll see the Apple confirmation sheet with Face ID / Touch ID. Apple handles refunds and disputes via reportaproblem.apple.com."},
+    {"id": "faq_lightning_addresses", "q": "What Lightning addresses are supported?",
+     "a": "We accept BOLT11 invoices (starting with 'lnbc') AND Lightning addresses (e.g. user@speed.app, user@zbd.gg, user@walletofsatoshi.com). For BOLT11 invoices, make sure the amount you encode is 0 sats so the redeem amount you enter is honored."},
+    {"id": "faq_ad_free_upgrade", "q": "What does the Ad-Free upgrade do?",
+     "a": "The Ad-Free + Priority Support upgrade removes interstitial banner ads and routes your support requests to a faster queue. Rewarded video ads (which give you hashrate) remain available — they're opt-in only."},
+    {"id": "faq_payout_multiplier", "q": "What controls how much I earn per GH/s?",
+     "a": "Earnings are computed live: your hashrate share of the Bitcoin network multiplied by the daily block reward (~450 BTC/day), then scaled by an operator-controlled multiplier. The multiplier is conservative by design so the app remains sustainable."},
+    {"id": "faq_premium_support", "q": "How do I get priority support?",
+     "a": "Premium users (anyone with an active paid mining plan) automatically get priority support — your messages are tagged for the admin's attention and SLA is 48 hours. Free users get instant AI-powered chat responses; admins also monitor that queue."},
+    {"id": "faq_account_delete", "q": "How do I delete my account?",
+     "a": "Email support@hashratecloudminer.com from the address you registered with and we'll permanently delete your account and any associated data within 14 days, in line with Apple's App Store Review guidelines and applicable data protection laws."},
+]
+
+
+@api.get("/faqs")
+async def faqs_get():
+    """Public FAQ list — used by the in-app Support chat for free users."""
+    rows = await db.faqs.find({"enabled": {"$ne": False}}, {"_id": 0}).sort("order", 1).to_list(100)
+    if not rows:
+        # Lazy seed on first call
+        for i, faq in enumerate(SEEDED_FAQS):
+            await db.faqs.update_one(
+                {"id": faq["id"]},
+                {"$set": {**faq, "order": i, "enabled": True}},
+                upsert=True,
+            )
+        rows = await db.faqs.find({"enabled": True}, {"_id": 0}).sort("order", 1).to_list(100)
+    return {"faqs": rows}
+
+
+class FAQPatch(BaseModel):
+    q: Optional[str] = None
+    a: Optional[str] = None
+    order: Optional[int] = None
+    enabled: Optional[bool] = None
+
+
+@api.patch("/admin/faqs/{faq_id}")
+async def admin_faq_patch(
+    faq_id: str,
+    payload: FAQPatch,
+    current_admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    upd = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if upd:
+        await db.faqs.update_one({"id": faq_id}, {"$set": upd})
+        await db.admin_audit.insert_one({
+            "id": str(uuid.uuid4()),
+            "admin_id": current_admin["id"],
+            "admin_email": current_admin["email"],
+            "action": f"faq.patch:{faq_id}",
+            "patch": upd,
+            "created_at": now_utc().isoformat(),
+        })
+    return await db.faqs.find_one({"id": faq_id}, {"_id": 0})
+
+
+# ---------------------------- Support: AI helper for free users ----------------------------
+@api.post("/support/ai-reply")
+async def support_ai_reply(
+    payload: SupportSendRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Generate an AI reply to the user's last message + return suggested
+    FAQs. Premium users (active paid plan or ad_free) ALSO get their message
+    routed to the admin support thread."""
+    user_id = current_user["id"]
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+
+    # Detect "premium" — active paid SKU machine OR ad_free entitlement
+    is_premium = bool(current_user.get("ad_free"))
+    if not is_premium:
+        active = await db.machines.count_documents({
+            "user_id": user_id,
+            "status": "active",
+            "package_id": {"$nin": ["welcome_gift", "free_forever"]},
+        })
+        is_premium = active > 0
+
+    # Persist the user message into the thread (admin sees it)
+    thread = await _support_get_or_create_thread(user_id, current_user["email"])
+    now_iso = now_utc().isoformat()
+    user_msg = {
+        "id": str(uuid.uuid4()),
+        "thread_id": thread["id"],
+        "user_id": user_id,
+        "sender": "user",
+        "sender_email": current_user["email"],
+        "body": body[:2000],
+        "created_at": now_iso,
+        "read_at": None,
+        "is_premium": is_premium,
+    }
+    await db.support_messages.insert_one(user_msg.copy())
+    await db.support_threads.update_one(
+        {"id": thread["id"]},
+        {
+            "$set": {
+                "last_message_at": now_iso,
+                "last_message_preview": body[:140],
+                "last_message_from": "user",
+                "status": "open",
+                "is_premium": is_premium,
+            },
+            "$inc": {"unread_admin_count": 1},
+        },
+    )
+
+    # Pull FAQs for context
+    faqs = await db.faqs.find({"enabled": {"$ne": False}}, {"_id": 0}).sort("order", 1).to_list(50)
+    faq_corpus = "\n\n".join(f"Q: {f['q']}\nA: {f['a']}" for f in faqs)
+
+    # AI reply
+    ai_text = None
+    try:
+        from integrations import ai as ai_mod
+        sys_msg = (
+            "You are the support assistant for Hashrate Cloud Miner — a Bitcoin "
+            "cloud-mining app with virtual hashrate, daily check-ins, rewarded "
+            "ads, in-app purchases, and Lightning Network redeems. You ONLY "
+            "answer questions using the Knowledge Base below. If a question is "
+            "off-topic or you don't know, say: \"I'm not sure — I'll route this "
+            "to our human support team.\" Keep replies under 90 words. "
+            f"Knowledge Base:\n{faq_corpus[:3500]}"
+        )
+        ai_text = await ai_mod._chat(
+            prompt=body,
+            system=sys_msg,
+            session_id=f"support-{user_id}",
+            timeout_s=12.0,
+        )
+    except Exception as e:
+        logger.warning("support ai-reply failed: %s", e)
+
+    if not ai_text:
+        ai_text = (
+            "Thanks for your message! Our team will reply within 48 hours. "
+            "In the meantime, check the FAQ list below — it covers the most "
+            "common questions about hashrate, redemption, and bonuses."
+        )
+
+    # Save AI reply as an 'admin' sender message tagged ai=true so the
+    # user's chat history reads cleanly even when admin hasn't replied yet.
+    ai_msg = {
+        "id": str(uuid.uuid4()),
+        "thread_id": thread["id"],
+        "user_id": user_id,
+        "sender": "admin",
+        "sender_email": "ai@hashratecloudminer.app",
+        "body": ai_text[:2000],
+        "created_at": now_utc().isoformat(),
+        "read_at": now_utc().isoformat(),
+        "ai_generated": True,
+    }
+    await db.support_messages.insert_one(ai_msg.copy())
+    await db.support_threads.update_one(
+        {"id": thread["id"]},
+        {"$set": {
+            "last_message_at": ai_msg["created_at"],
+            "last_message_preview": ai_text[:140],
+            "last_message_from": "ai",
+        }},
+    )
+
+    # Top-3 matched FAQ suggestions (naive keyword match)
+    tokens = [t for t in body.lower().split() if len(t) > 3][:8]
+    scored = []
+    for f in faqs:
+        text = (f["q"] + " " + f["a"]).lower()
+        score = sum(1 for t in tokens if t in text)
+        if score > 0:
+            scored.append((score, f))
+    scored.sort(key=lambda x: -x[0])
+    suggested = [f for (_, f) in scored[:3]]
+
+    return {
+        "ok": True,
+        "is_premium": is_premium,
+        "ai_reply": ai_text,
+        "suggested_faqs": suggested,
+        "message_id": ai_msg["id"],
+    }
+
+
 # ---------------------------- Health ----------------------------
 @api.get("/")
 async def root():
@@ -2113,11 +2769,68 @@ async def startup():
         await db.users.create_index("referral_code", unique=True)
         await db.machines.create_index([("user_id", 1), ("status", 1)])
         await db.transactions.create_index([("user_id", 1), ("created_at", -1)])
+        await db.ad_views.create_index([("user_id", 1), ("day_bucket", 1)])
+        await db.ad_views.create_index("transaction_id", unique=True)
+        await db.faqs.create_index("id", unique=True)
     except Exception as e:
         logger.warning("Index creation issue: %s", e)
 
+    # ----------------------------------------------------------------
+    # ONE-TIME DATA WIPE MIGRATION (Build #22 AdMob pivot)
+    # Drop incompatible legacy data so the new hashrate/AdMob model can
+    # operate on a clean slate. Preserves auth (users.email + password).
+    # Idempotent via _meta.schema_version.
+    # ----------------------------------------------------------------
+    try:
+        target_version = os.environ.get("SCHEMA_VERSION", "v22_admob_pivot")
+        meta_col = db["schema_meta"]
+        meta = await meta_col.find_one({"id": "schema"}, {"_id": 0}) or {}
+        if meta.get("version") != target_version:
+            logger.warning("schema migration: wiping legacy collections (target=%s, current=%s)",
+                           target_version, meta.get("version"))
+            # Wipe machines + transactions + ad_views (legacy "date" shape)
+            await db.machines.delete_many({})
+            await db.transactions.delete_many({})
+            await db.ad_views.delete_many({})
+            # Reset legacy fields on every user, keep auth + admin flag
+            await db.users.update_many({}, {"$set": {
+                "balance_btc": 0.0,
+                "lifetime_earnings_btc": 0.0,
+                "last_accrual_at": now_utc().isoformat(),
+                "last_checkin_at": None,
+                "last_checkin_day_bucket": None,
+                "checkin_streak": 0,
+                "checkin_hashrate_ghs": 0.0,
+                "checkin_hashrate_expires_at": None,
+                "ad_hashrate_ghs": 0.0,
+                "ad_hashrate_expires_at": None,
+                "purchased_sku_bonuses": [],
+                "cross_sell_consumed_skus": [],
+                "free_forever_last_activated_at": None,
+            }})
+            await meta_col.update_one(
+                {"id": "schema"},
+                {"$set": {"id": "schema", "version": target_version,
+                          "migrated_at": now_utc().isoformat()}},
+                upsert=True,
+            )
+            logger.warning("schema migration: complete (v22_admob_pivot)")
+    except Exception:
+        logger.exception("schema migration failed (continuing)")
+
     # Seed the admin account (idempotent).
     await _ensure_admin_user()
+
+    # Seed FAQs
+    try:
+        for i, faq in enumerate(SEEDED_FAQS):
+            await db.faqs.update_one(
+                {"id": faq["id"]},
+                {"$setOnInsert": {**faq, "order": i, "enabled": True}},
+                upsert=True,
+            )
+    except Exception:
+        logger.exception("FAQ seed failed")
 
     # Kick off the live BTC/USD rate refresher (every 5 min, with fallback).
     try:
@@ -2216,41 +2929,10 @@ async def _job_accrue_all_users():
 
 
 async def _job_auto_checkin():
-    cursor = db.users.find({"auto_checkin": True}, {"_id": 0, "id": 1, "last_checkin_at": 1, "checkin_streak": 1})
-    now = now_utc()
-    async for u in cursor:
-        last = u.get("last_checkin_at")
-        last_dt = None
-        if last:
-            last_dt = datetime.fromisoformat(last) if isinstance(last, str) else last
-            if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
-        if last_dt and (now - last_dt) < timedelta(hours=20):
-            continue
-        try:
-            streak = int(u.get("checkin_streak", 0)) + 1
-            if last_dt and (now - last_dt) > timedelta(hours=48):
-                streak = 1
-            reward = DAILY_CHECKIN_REWARD_USD * min(streak, 7)
-            await db.users.update_one(
-                {"id": u["id"]},
-                {
-                    "$set": {"last_checkin_at": now.isoformat(), "checkin_streak": streak},
-                    "$inc": {"balance_btc": usd_to_btc(reward)},
-                },
-            )
-            await db.transactions.insert_one({
-                "id": str(uuid.uuid4()),
-                "user_id": u["id"],
-                "type": "checkin",
-                "amount_usd": reward,
-                "amount_btc": usd_to_btc(reward),
-                "status": "completed",
-                "description": f"Auto daily check-in (streak {streak})",
-                "created_at": now.isoformat(),
-            })
-        except Exception:
-            logger.exception("auto checkin failed for %s", u.get("id"))
+    """Build #22+ no-op — the daily-checkin ladder is intentionally manual
+    so users come back to tap. Auto-checkin would short-circuit the streak
+    UX. Kept as a stub for the scheduler factory."""
+    return
 
 
 async def _job_auto_reinvest():
@@ -2263,26 +2945,30 @@ async def _job_auto_reinvest():
             balance_usd = btc_to_usd(float(user.get("balance_btc", 0.0)))
             if balance_usd < min_usd:
                 continue
-            # Pick the most expensive package that the user can afford.
+            # Pick the most expensive mining package that the user can afford.
             target = None
             for p in sorted(SHOP_PACKAGES, key=lambda x: -x["price_usd"]):
-                if p["price_usd"] <= balance_usd and p["id"] != "starter_099":
+                if p.get("entitlement"):
+                    continue  # skip ad-free upgrade
+                if p["price_usd"] <= balance_usd:
                     target = p
                     break
             if not target:
                 continue
             cost_btc = usd_to_btc(target["price_usd"])
             now = now_utc()
+            duration_h = target.get("duration_hours", 720)
+            boost_ghs = target.get("hashrate_boost_ghs", 0)
             machine = {
                 "id": str(uuid.uuid4()),
                 "user_id": u["id"],
                 "package_id": target["id"],
                 "name": target["name"],
-                "hash_rate": target["hash_rate"],
-                "daily_yield_usd": target["daily_yield_usd"],
-                "duration_days": target["duration_days"],
+                "hashrate_boost_ghs": boost_ghs,
+                "hash_rate": boost_ghs,
+                "duration_hours": duration_h,
                 "purchased_at": now.isoformat(),
-                "expires_at": (now + timedelta(days=target["duration_days"])).isoformat(),
+                "expires_at": (now + timedelta(hours=duration_h)).isoformat(),
                 "status": "active",
                 "auto_purchased": True,
             }
