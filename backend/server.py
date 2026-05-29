@@ -45,7 +45,7 @@ ADMIN_INITIAL_PASSWORD = os.environ.get("ADMIN_INITIAL_PASSWORD") or None
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
-app = FastAPI(title="Satoshi Cloud Miner API")
+app = FastAPI(title="Hashrate Cloud Miner API")
 api = APIRouter(prefix="/api")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
@@ -916,7 +916,7 @@ async def withdraw(
         payout = blink_create_payout(
             amount_usd=round(btc_to_usd(amount_btc), 6),  # informational
             destination=payload.address,
-            description="Satoshi Cloud Miner withdrawal",
+            description="Hashrate Cloud Miner withdrawal",
         )
     except Exception as e:
         await db.users.update_one(
@@ -1073,7 +1073,7 @@ async def referral(current_user: Dict[str, Any] = Depends(get_current_user)):
         "code": user.get("referral_code"),
         "invited_count": count,
         "bonus_per_invite_usd": REFERRAL_BONUS_USD,
-        "share_text": f"Mine Bitcoin in the cloud — join Satoshi Cloud Miner with my code {user.get('referral_code')} for a bonus.",
+        "share_text": f"Mine Bitcoin in the cloud — join Hashrate Cloud Miner with my code {user.get('referral_code')} for a bonus.",
     }
 
 
@@ -1882,7 +1882,7 @@ async def admin_fees_reinvest(
 # ---------------------------- Health ----------------------------
 @api.get("/")
 async def root():
-    return {"app": "Satoshi Cloud Miner", "status": "ok"}
+    return {"app": "Hashrate Cloud Miner", "status": "ok"}
 
 
 # Include router

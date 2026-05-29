@@ -194,9 +194,9 @@ export default function Profile() {
           <Text style={styles.logoutText}>Sign out</Text>
         </TouchableOpacity>
 
-        <Text style={styles.appVersion}>Satoshi Cloud Miner v1.0.0 (17)</Text>
+        <Text style={styles.appVersion}>Hashrate Cloud Miner v1.0.1 (21)</Text>
         <Text style={styles.disclaimer}>
-          Satoshi Cloud Miner is a cloud computing simulation and monitoring tool. It is not a financial,
+          Hashrate Cloud Miner is a cloud computing simulation and monitoring tool. It is not a financial,
           investment, or trading platform. Outcomes depend on server status and operational
           conditions. Pricing reflects operational costs.
         </Text>

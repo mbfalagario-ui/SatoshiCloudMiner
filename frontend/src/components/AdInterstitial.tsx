@@ -133,7 +133,7 @@ export default function AdInterstitial({ visible, onClose }: { visible: boolean;
             </View>
           </Pressable>
 
-          <Text style={styles.footnote}>Promoted in-app content. Owned by Satoshi Cloud Miner.</Text>
+          <Text style={styles.footnote}>Promoted in-app content. Owned by Hashrate Cloud Miner.</Text>
         </View>
       </Animated.View>
     </Modal>

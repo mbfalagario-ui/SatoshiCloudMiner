@@ -251,7 +251,7 @@ async def auto_ship_tick() -> None:
                 "attributes": {
                     "platform": "IOS",
                     "versionString": TARGET_NEXT_VERSION,
-                    "copyright": "2026 Satoshi Cloud Miner",
+                    "copyright": "2026 Hashrate Cloud Miner",
                     "releaseType": "AFTER_APPROVAL",
                 },
                 "relationships": {

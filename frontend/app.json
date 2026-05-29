@@ -1,19 +1,19 @@
 {
   "expo": {
-    "name": "Satoshi Cloud Miner",
+    "name": "Hashrate Cloud Miner",
     "slug": "satoshi-cloud-miner",
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "satoshicloudminer",
+    "scheme": "hashratecloudminer",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
-    "description": "Satoshi Cloud Miner — Bitcoin cloud-mining performance dashboard with AI yield agents and Lightning payouts.",
+    "description": "Hashrate Cloud Miner — Bitcoin cloud-mining performance dashboard with AI yield agents and Lightning payouts.",
     "primaryColor": "#00FFA3",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.satoshicloudminer",
-      "buildNumber": "20",
+      "buildNumber": "21",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -47,7 +47,8 @@
           "backgroundColor": "#0B0E14"
         }
       ],
-      "react-native-iap"
+      "react-native-iap",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true

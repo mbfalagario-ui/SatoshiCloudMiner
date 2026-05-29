@@ -1,4 +1,4 @@
-// Satoshi Cloud Miner design tokens — Electric & Neon dark theme
+// Hashrate Cloud Miner design tokens — Electric & Neon dark theme
 export const colors = {
   bg: '#0B0E14',
   surface: '#151A22',

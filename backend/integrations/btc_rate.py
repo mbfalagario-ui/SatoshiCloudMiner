@@ -75,7 +75,7 @@ async def refresh_btc_usd_rate(timeout: float = 6.0) -> float:
         for src in _SOURCES:
             try:
                 resp = await client.get(src["url"], headers={
-                    "User-Agent": "SatoshiCloudMiner/1.0 (+https://satoshicloudminer.app)",
+                    "User-Agent": "HashrateCloudMiner/1.0 (+https://hashratecloudminer.app)",
                     "Accept": "application/json",
                 })
                 resp.raise_for_status()
