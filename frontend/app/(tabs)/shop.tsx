@@ -1,415 +1,323 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  ActivityIndicator,
-  Image,
-  RefreshControl,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
+  ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { api } from '@/src/utils/api';
-import { colors, spacing, radius, fonts, shadows, media, fmtUsd } from '@/src/utils/theme';
 import { useSession } from '@/src/ctx';
-import { confirmDialog, notify } from '@/src/utils/dialog';
-import { isIapAvailable, initIap, buyProduct, fetchProducts } from '@/src/utils/iap';
+import { colors, radius, spacing, fonts, fmtUsd, fmtGhs } from '@/src/utils/theme';
+import CrossSellBanner from '@/src/components/CrossSellBanner';
 
 type Pkg = {
   id: string;
   name: string;
-  tagline: string;
+  tagline?: string;
+  offer_text?: string | null;
   price_usd: number;
-  hash_rate: number;
-  duration_days: number;
-  daily_yield_usd: number;
+  original_price_usd: number;
+  hashrate_boost_ghs: number;
+  duration_hours: number;
   badge?: string | null;
-  bogo: boolean;
-  // Backend-enriched fields (computed at /api/packages):
-  total_return_usd?: number;
-  roi_pct?: number;
-  break_even_days?: number;
-  profitable?: boolean;
-  profitability_score?: number;
-  ai_optimized?: boolean;
+  first_purchase_bonus_pct: number;
+  hashrate_display: string;
+  duration_label: string;
   entitlement?: string;
 };
 
-export default function Shop() {
-  const { refresh } = useSession();
-  const router = useRouter();
-  const [pkgs, setPkgs] = useState<Pkg[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [buyingId, setBuyingId] = useState<string | null>(null);
+export default function Store() {
+  const { user, refresh } = useSession();
+  const params = useLocalSearchParams<{ focus?: string }>();
+  const [packages, setPackages] = useState<Pkg[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [crossSell, setCrossSell] = useState<any>(null);
+  const [earnings, setEarnings] = useState<any>(null);
+  const [consumed, setConsumed] = useState<string[]>([]);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
-      const r = await api('/packages', { auth: false });
-      setPkgs(r.packages);
-    } finally {
-      setLoading(false);
+      const [pk, cs, e] = await Promise.allSettled([
+        api('/packages'),
+        api('/store/cross-sell'),
+        api('/earnings'),
+      ]);
+      if (pk.status === 'fulfilled') {
+        const all = (pk.value?.packages || []) as Pkg[];
+        setPackages(all.filter((p) => p.id !== 'adfree_399'));
+        const adFreePkg = all.find((p) => p.id === 'adfree_399');
+        if (adFreePkg) setPackages((prev) => [...prev, adFreePkg]);
+      }
+      if (cs.status === 'fulfilled') setCrossSell(cs.value);
+      if (e.status === 'fulfilled') setEarnings(e.value);
+      setConsumed(user?.purchased_sku_bonuses || []);
+    } catch {}
+  }, [user]);
+
+  useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  useEffect(() => {
+    if (params.focus && packages.length > 0) {
+      const target = packages.find((p) => p.id === params.focus);
+      if (target) setSelectedId(target.id);
+    } else if (!selectedId && packages.length > 0) {
+      const popular = packages.find((p) => p.badge === 'POPULAR') || packages[2] || packages[0];
+      setSelectedId(popular.id);
     }
-  }, []);
+  }, [packages, params.focus, selectedId]);
 
-  useEffect(() => {
-    load();
-    // Pre-warm StoreKit connection so the first tap on "Buy" is instant.
-    if (isIapAvailable()) initIap().catch(() => {});
-  }, [load]);
-
-  // Once the backend package list arrives, pre-fetch the matching StoreKit
-  // products so `requestPurchase` doesn't throw `E_PRODUCT_NOT_AVAILABLE` on
-  // the very first tap (required by react-native-iap v15 Nitro).
-  useEffect(() => {
-    if (!pkgs.length) return;
-    if (!isIapAvailable()) return;
-    const skus = pkgs.map((p) => p.id);
-    fetchProducts(skus).catch((e) => {
-      // eslint-disable-next-line no-console
-      console.warn('[Shop] StoreKit pre-fetch failed (non-fatal):', e);
-    });
-  }, [pkgs]);
-
-  const buy = (pkg: Pkg) => {
-    const iapOn = isIapAvailable();
-    confirmDialog(
-      'Confirm purchase',
-      iapOn
-        ? `Buy "${pkg.name}" for ${fmtUsd(pkg.price_usd)}?\n\nApple's purchase sheet will appear next. You'll be charged via your Apple ID.`
-        : `Buy "${pkg.name}" for ${fmtUsd(pkg.price_usd)}?\n\nDev mode: purchase will be simulated. On a real iOS build this triggers Apple In-App Purchase.`,
-      async () => {
-        setBuyingId(pkg.id);
-        try {
-          let appleTransactionId: string | undefined;
-          if (iapOn) {
-            const r = await buyProduct(pkg.id);
-            if (!r.applePurchase || !r.transactionId) {
-              throw new Error('Apple did not return a transaction id.');
-            }
-            appleTransactionId = r.transactionId;
-          }
-
-          const body: { package_id: string; apple_transaction_id?: string } = {
-            package_id: pkg.id,
-          };
-          if (appleTransactionId) body.apple_transaction_id = appleTransactionId;
-
-          const r = await api('/packages/buy', {
-            method: 'POST',
-            body: JSON.stringify(body),
-          });
-          await refresh();
-
-          // Branch the success message based on what was actually purchased.
-          // Ad-Free → no miners are added; show the "Ads removed" copy.
-          // Mining plans → show the miner-count copy (handles BOGO bonuses).
-          // machines_added === 0 with no ad_free entitlement means the
-          //   transaction was already redeemed by the backend's idempotent
-          //   path — surface that explicitly instead of saying "0 miner".
-          const isAdFree = pkg.entitlement === 'ad_free' || pkg.id === 'adfree_399';
-          if (isAdFree) {
-            notify(
-              'Ad-Free Unlocked',
-              'Ads are now removed from your experience. Enjoy mining without interruptions.'
-            );
-          } else if ((r.machines_added ?? 0) > 0) {
-            const count = r.machines_added as number;
-            notify(
-              'Purchase successful',
-              `${count} miner${count > 1 ? 's' : ''} added to your account.`
-            );
-          } else {
-            // Defensive fallback (e.g. backend de-duped this Apple txn).
-            notify(
-              'Purchase recorded',
-              'Your purchase was confirmed. Pull to refresh on Home if you don\'t see your miners yet.'
-            );
-          }
-
-          // Jump back to Home so the user immediately sees their new
-          // hashrate. Home's useFocusEffect will refresh dashboard data.
-          if (!isAdFree && (r.machines_added ?? 0) > 0) {
-            try { router.replace('/(tabs)'); } catch {}
-          }
-        } catch (e: any) {
-          // Friendlier headline when Apple hasn't approved the IAP yet
-          // (the very first launch of a brand new app version on TestFlight
-          // or App Store always hits this until Apple finishes reviewing
-          // the IAPs alongside the binary).
-          const friendlyTitle =
-            e?.code === 'E_PRODUCT_NOT_AVAILABLE' ? 'Coming soon' : 'Purchase failed';
-          notify(friendlyTitle, e?.message ?? 'Try again.');
-        } finally {
-          setBuyingId(null);
-        }
-      },
-      'Buy now'
-    );
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([load(), refresh()]);
+    setRefreshing(false);
   };
+
+  const buy = async (pkg: Pkg) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await api('/packages/buy', {
+        method: 'POST',
+        body: JSON.stringify({ package_id: pkg.id }),
+      });
+      const bonusMsg = r.first_purchase_bonus_applied
+        ? `\n\nFirst-time bonus +${r.bonus_pct}% applied (+${r.bonus_ghs?.toFixed?.(1)} GH/s)`
+        : '';
+      Alert.alert('Purchase successful', `${pkg.name} is now active.${bonusMsg}`);
+      await load();
+      await refresh();
+    } catch (e: any) {
+      Alert.alert('Purchase failed', e?.message || 'Try again later');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selected = useMemo(() => packages.find((p) => p.id === selectedId), [packages, selectedId]);
+  const totalGhs = earnings?.hashrate?.total_ghs || 0;
+
+  if (packages.length === 0) {
+    return (
+      <SafeAreaView style={styles.safe}><View style={styles.center}><ActivityIndicator color={colors.primary} size="large" /></View></SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>AI Mining Plans</Text>
-          <Text style={styles.subtitle}>Pick a plan · AI agents optimize your yield</Text>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+      >
+        <Text style={styles.title}>Store</Text>
+        <Text style={styles.subtitle}>Boost hashrate · First purchase gets free GH/s</Text>
+
+        <CrossSellBanner data={crossSell} />
+
+        {/* Active Computing Power */}
+        <View style={styles.activeCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.activeLabel}>Active Computing Power</Text>
+            <Text style={styles.activeValue}>{fmtGhs(totalGhs)}</Text>
+          </View>
+          {selected ? (
+            <View style={styles.activeBoost}>
+              <Text style={styles.boostLabel}>+ if you buy</Text>
+              <Text style={styles.boostValue}>{fmtGhs(selected.hashrate_boost_ghs)}</Text>
+            </View>
+          ) : null}
         </View>
-        <Image source={{ uri: media.serverRack }} style={styles.headerImg} />
-      </View>
 
-      <FlatList
-        data={pkgs}
-        keyExtractor={(it) => it.id}
-        contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.primary} />
-        }
-        ListEmptyComponent={
-          loading ? (
-            <View style={{ marginTop: 60, alignItems: 'center' }}>
-              <ActivityIndicator color={colors.primary} />
-            </View>
-          ) : (
-            <Text style={styles.empty}>No packages available.</Text>
-          )
-        }
-        renderItem={({ item }) => {
-          const totalReturn = item.total_return_usd ?? item.daily_yield_usd * item.duration_days;
-          const profitable = item.profitable ?? totalReturn > item.price_usd;
-          const roi = item.roi_pct ?? ((totalReturn - item.price_usd) / item.price_usd) * 100;
-          const breakEven = item.break_even_days ?? item.price_usd / Math.max(item.daily_yield_usd, 0.0001);
-          const stars = Math.max(0, Math.min(5, Math.round((item.profitability_score ?? 0))));
-          return (
-            <View
-              testID={`pkg-${item.id}`}
-              style={[
-                styles.card,
-                item.badge === 'POPULAR' && { borderColor: colors.primary },
-                item.badge === 'FLAGSHIP' && { borderColor: colors.secondary },
-              ]}
-            >
-              {item.badge && (
-                <View
-                  style={[
-                    styles.badge,
-                    item.badge === 'POPULAR' && { backgroundColor: colors.primary },
-                    item.badge === 'FLAGSHIP' && { backgroundColor: colors.secondary },
-                    item.badge === 'BOGO' && { backgroundColor: colors.warning },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.badgeText,
-                      (item.badge === 'POPULAR' || item.badge === 'FLAGSHIP' || item.badge === 'BOGO') && {
-                        color: colors.bg,
-                      },
-                    ]}
-                  >
-                    {item.badge}
-                  </Text>
-                </View>
-              )}
-
-              <View style={styles.cardHead}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.pkgName}>{item.name}</Text>
-                  <Text style={styles.pkgTag}>{item.tagline}</Text>
-                  {item.ai_optimized ? (
-                    <View style={styles.aiChip}>
-                      <Ionicons name="sparkles" size={11} color={colors.primary} />
-                      <Text style={styles.aiChipText}>AI-OPTIMIZED YIELD</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <View style={styles.priceWrap}>
-                  <Text style={styles.priceUsd}>{fmtUsd(item.price_usd)}</Text>
-                </View>
-              </View>
-
-              <View style={styles.specs}>
-                <Spec label="Hashpower" value={`${item.hash_rate.toFixed(0)} TH/s`} />
-                <Spec label="Duration" value={`${item.duration_days}d`} />
-                <Spec label="Daily yield" value={fmtUsd(item.daily_yield_usd)} />
-              </View>
-
-              {/* AI Profitability projection */}
-              <View style={styles.profitCard}>
-                <View style={styles.profitRow}>
-                  <Text style={styles.profitLabel}>AI ROI projection</Text>
-                  <Text style={[styles.profitValue, { color: profitable ? colors.primary : colors.warning }]}>
-                    {roi >= 0 ? '+' : ''}{roi.toFixed(1)}%
-                  </Text>
-                </View>
-                <View style={styles.profitRow}>
-                  <Text style={styles.profitLabel}>Total est. return</Text>
-                  <Text style={styles.profitValue}>{fmtUsd(totalReturn)}</Text>
-                </View>
-                <View style={styles.profitRow}>
-                  <Text style={styles.profitLabel}>Break-even</Text>
-                  <Text style={styles.profitValue}>{breakEven.toFixed(1)} days</Text>
-                </View>
-                <View style={styles.profitRow}>
-                  <Text style={styles.profitLabel}>Profitability score</Text>
-                  <View style={styles.stars}>
-                    {[0, 1, 2, 3, 4].map((i) => (
-                      <Ionicons
-                        key={i}
-                        name={i < stars ? 'star' : 'star-outline'}
-                        size={12}
-                        color={i < stars ? colors.primary : colors.textTertiary}
-                      />
-                    ))}
-                  </View>
-                </View>
-                {/* Profitability bar */}
-                <View style={styles.barTrack}>
-                  <View
-                    style={[
-                      styles.barFill,
-                      {
-                        width: `${Math.min(100, Math.max(8, ((item.profitability_score ?? 0) / 5) * 100))}%`,
-                        backgroundColor: profitable ? colors.primary : colors.warning,
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
-
+        {/* Plan selector pills (mining only, no adfree) */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.pillRow}
+          style={styles.pillScroll}
+        >
+          {packages.filter((p) => !p.entitlement).map((p) => {
+            const isSel = p.id === selectedId;
+            return (
               <TouchableOpacity
-                testID={`pkg-buy-${item.id}`}
-                style={[styles.buyBtn, buyingId === item.id && { opacity: 0.6 }]}
-                disabled={!!buyingId}
-                onPress={() => buy(item)}
-                activeOpacity={0.85}
+                key={p.id}
+                onPress={() => setSelectedId(p.id)}
+                style={[styles.pill, isSel && styles.pillActive]}
+                testID={`pill-${p.id}`}
               >
-                {buyingId === item.id ? (
-                  <ActivityIndicator color={colors.bg} />
-                ) : (
-                  <>
-                    <Text style={styles.buyBtnText}>Buy {fmtUsd(item.price_usd)}</Text>
-                    <Ionicons name="flash" size={16} color={colors.bg} />
-                  </>
-                )}
+                <Text style={[styles.pillText, isSel && styles.pillTextActive]}>{p.hashrate_display}</Text>
+                {p.first_purchase_bonus_pct > 0 && !consumed.includes(p.id) ? (
+                  <View style={styles.pillBadge}><Text style={styles.pillBadgeText}>+{p.first_purchase_bonus_pct}%</Text></View>
+                ) : null}
               </TouchableOpacity>
-            </View>
-          );
-        }}
-      />
+            );
+          })}
+        </ScrollView>
+
+        {/* Selected plan detail card */}
+        {selected && !selected.entitlement ? (
+          <PlanCard pkg={selected} alreadyBonusUsed={consumed.includes(selected.id)} onBuy={() => buy(selected)} busy={busy} />
+        ) : null}
+
+        {/* Ad-Free upgrade card */}
+        {packages.find((p) => p.entitlement === 'ad_free') ? (
+          <AdFreeCard pkg={packages.find((p) => p.entitlement === 'ad_free')!} onBuy={buy} busy={busy} alreadyOwned={!!user?.ad_free} />
+        ) : null}
+
+        <View style={styles.disclaimer}>
+          <Ionicons name="shield-checkmark" size={14} color={colors.textTertiary} />
+          <Text style={styles.disclaimerText}>
+            Plans grant virtual computing power for the listed duration. Earnings are indicative based on live network hashrate. This app does not hold, manage, or custody on-chain assets.
+          </Text>
+        </View>
+        <View style={{ height: 100 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-function Spec({ label, value }: { label: string; value: string }) {
+function PlanCard({ pkg, alreadyBonusUsed, onBuy, busy }: { pkg: Pkg; alreadyBonusUsed: boolean; onBuy: () => void; busy: boolean }) {
+  const bonusActive = pkg.first_purchase_bonus_pct > 0 && !alreadyBonusUsed;
+  const bonusGhs = bonusActive ? (pkg.hashrate_boost_ghs * pkg.first_purchase_bonus_pct) / 100 : 0;
   return (
-    <View style={styles.spec}>
-      <Text style={styles.specLabel}>{label}</Text>
-      <Text style={styles.specValue}>{value}</Text>
+    <LinearGradient colors={['#16202C', '#0E1620']} style={styles.detailCard}>
+      {pkg.offer_text ? (
+        <View style={styles.offerPill}>
+          <Ionicons name="pricetag" size={11} color="#FF7A00" />
+          <Text style={styles.offerText}>{pkg.offer_text}</Text>
+        </View>
+      ) : null}
+      <View style={styles.bonusRow}>
+        <Text style={styles.bonusLabel}>Free Computing Power</Text>
+        <Text style={[styles.bonusValue, !bonusActive && { color: colors.textTertiary }]}>
+          {bonusActive ? `+${pkg.first_purchase_bonus_pct}.0%` : 'Used'}
+        </Text>
+      </View>
+      <View style={styles.gainRow}>
+        <Text style={styles.gainLabel}>Gain</Text>
+        <View style={styles.gainValueRow}>
+          <Text style={styles.gainValue}>{fmtGhs(pkg.hashrate_boost_ghs)}</Text>
+          {bonusActive ? (
+            <Text style={styles.gainBonus}> + {fmtGhs(bonusGhs)}</Text>
+          ) : null}
+        </View>
+      </View>
+      <Text style={styles.durationMeta}>Active for {pkg.duration_label}</Text>
+      <TouchableOpacity
+        disabled={busy}
+        onPress={onBuy}
+        style={styles.cta}
+        testID={`buy-${pkg.id}`}
+      >
+        <LinearGradient colors={['#00FFA3', '#00D1FF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.ctaInner}>
+          <Text style={styles.ctaText}>Pay {fmtUsd(pkg.price_usd)}</Text>
+          <Text style={styles.ctaStrike}>{fmtUsd(pkg.original_price_usd)}</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </LinearGradient>
+  );
+}
+
+function AdFreeCard({ pkg, onBuy, busy, alreadyOwned }: { pkg: Pkg; onBuy: (p: Pkg) => void; busy: boolean; alreadyOwned: boolean }) {
+  return (
+    <View style={styles.adFreeCard}>
+      <View style={styles.adFreeIcon}>
+        <Ionicons name="shield" size={24} color={colors.secondary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.adFreeTitle}>{pkg.name}</Text>
+        <Text style={styles.adFreeSub}>Remove interstitial ads · Priority support</Text>
+      </View>
+      <TouchableOpacity
+        disabled={busy || alreadyOwned}
+        onPress={() => onBuy(pkg)}
+        style={[styles.adFreeBtn, alreadyOwned && styles.adFreeBtnOwned]}
+        testID="buy-adfree"
+      >
+        <Text style={styles.adFreeBtnText}>{alreadyOwned ? 'Active' : fmtUsd(pkg.price_usd)}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scroll: { padding: spacing.lg },
+  title: { color: colors.text, fontSize: 28, fontWeight: '800' },
+  subtitle: { color: colors.textSecondary, fontSize: 13, marginTop: 4, marginBottom: spacing.md },
+  activeCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.borderSoft, marginBottom: spacing.md,
   },
-  title: { color: colors.text, fontSize: 26, fontWeight: '800', letterSpacing: -0.6 },
-  subtitle: { color: colors.textSecondary, fontSize: 13, marginTop: 4 },
-  headerImg: { width: 56, height: 56, borderRadius: 14, opacity: 0.6 },
-  list: { paddingHorizontal: spacing.lg, paddingBottom: 120 },
-  empty: { color: colors.textSecondary, textAlign: 'center', marginTop: 60 },
-  card: {
+  activeLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  activeValue: { color: colors.text, fontSize: 28, fontWeight: '800', fontFamily: fonts.mono, marginTop: 2 },
+  activeBoost: { alignItems: 'flex-end' },
+  boostLabel: { color: colors.primary, fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  boostValue: { color: colors.primary, fontSize: 18, fontWeight: '800', fontFamily: fonts.mono, marginTop: 2 },
+  pillScroll: { marginBottom: spacing.md },
+  pillRow: { gap: 8, paddingRight: spacing.lg },
+  pill: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    marginBottom: spacing.md,
-    ...shadows.card,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: colors.borderSoft,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
   },
-  badge: {
-    position: 'absolute',
-    top: -10,
-    right: spacing.md,
-    backgroundColor: colors.primaryDim,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-  },
-  badgeText: { color: colors.primary, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-  cardHead: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md },
-  pkgName: { color: colors.text, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
-  pkgTag: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
-  priceWrap: { alignItems: 'flex-end' },
-  priceUsd: {
-    color: colors.primary,
-    fontSize: 22,
-    fontWeight: '800',
-    fontFamily: fonts.mono,
-  },
-  specs: {
-    flexDirection: 'row',
-    backgroundColor: colors.bg,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: spacing.sm,
+  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  pillText: { color: colors.textSecondary, fontSize: 13, fontWeight: '800', fontFamily: fonts.mono },
+  pillTextActive: { color: colors.bg },
+  pillBadge: { backgroundColor: 'rgba(0,0,0,0.15)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
+  pillBadgeText: { color: '#0B0E14', fontSize: 10, fontWeight: '800' },
+  detailCard: {
+    borderRadius: radius.lg, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.borderSoft,
     marginBottom: spacing.md,
   },
-  spec: { flex: 1 },
-  specLabel: { color: colors.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
-  specValue: { color: colors.text, fontSize: 14, fontWeight: '700', marginTop: 2, fontFamily: fonts.mono },
-  summaryRow: { marginBottom: spacing.md },
-  summaryText: { color: colors.textSecondary, fontSize: 12 },
-  aiChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.primaryDim,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: radius.sm,
-    alignSelf: 'flex-start',
-    marginTop: 6,
-  },
-  aiChipText: { color: colors.primary, fontSize: 9, fontWeight: '800', letterSpacing: 0.8 },
-  profitCard: {
-    backgroundColor: colors.bg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    padding: spacing.md,
+  offerPill: {
+    alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,122,0,0.15)',
+    borderWidth: 1, borderColor: 'rgba(255,122,0,0.45)',
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
     marginBottom: spacing.md,
-    gap: 6,
   },
-  profitRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  profitLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
-  profitValue: { color: colors.text, fontSize: 13, fontWeight: '800', fontFamily: fonts.mono },
-  stars: { flexDirection: 'row', gap: 1 },
-  barTrack: {
-    height: 4,
-    backgroundColor: colors.borderSoft,
-    borderRadius: 2,
-    marginTop: 6,
-    overflow: 'hidden',
+  offerText: { color: '#FF7A00', fontSize: 11, fontWeight: '800' },
+  bonusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  bonusLabel: { color: colors.textSecondary, fontSize: 13 },
+  bonusValue: { color: colors.primary, fontSize: 18, fontWeight: '800', fontFamily: fonts.mono },
+  gainRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  gainLabel: { color: colors.textSecondary, fontSize: 13 },
+  gainValueRow: { flexDirection: 'row', alignItems: 'baseline' },
+  gainValue: { color: colors.text, fontSize: 22, fontWeight: '800', fontFamily: fonts.mono },
+  gainBonus: { color: colors.primary, fontSize: 14, fontWeight: '800', fontFamily: fonts.mono },
+  durationMeta: { color: colors.textTertiary, fontSize: 11, marginTop: 4 },
+  cta: { marginTop: spacing.md, borderRadius: radius.md, overflow: 'hidden' },
+  ctaInner: { paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 10 },
+  ctaText: { color: colors.bg, fontSize: 16, fontWeight: '900' },
+  ctaStrike: { color: 'rgba(0,0,0,0.5)', fontSize: 13, fontWeight: '700', textDecorationLine: 'line-through' },
+  adFreeCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.borderSoft, marginBottom: spacing.md,
   },
-  barFill: { height: '100%', borderRadius: 2 },
-  buyBtn: {
-    flexDirection: 'row',
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
+  adFreeIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(0,209,255,0.15)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  buyBtnText: { color: colors.bg, fontSize: 15, fontWeight: '800' },
+  adFreeTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  adFreeSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
+  adFreeBtn: {
+    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: colors.secondary, borderRadius: 12,
+  },
+  adFreeBtnOwned: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSoft },
+  adFreeBtnText: { color: '#0B0E14', fontSize: 13, fontWeight: '800' },
+  disclaimer: { flexDirection: 'row', gap: 6, padding: spacing.sm, alignItems: 'flex-start' },
+  disclaimerText: { flex: 1, color: colors.textTertiary, fontSize: 10, lineHeight: 14 },
 });

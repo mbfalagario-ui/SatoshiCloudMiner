@@ -91,3 +91,15 @@ export function fmtHash(v: number): string {
   if (!v) return '0.00 TH/s';
   return `${v.toFixed(2)} TH/s`;
 }
+
+export function fmtGhs(ghs: number): string {
+  if (!ghs || ghs <= 0) return '0 GH/s';
+  if (ghs >= 1000) return `${(ghs / 1000).toFixed(2)} TH/s`;
+  if (ghs >= 1) return `${ghs.toFixed(1)} GH/s`;
+  return `${ghs.toFixed(2)} GH/s`;
+}
+
+export function fmtSats(s: number): string {
+  if (s === undefined || s === null || isNaN(s)) return '0';
+  return Math.floor(s).toLocaleString('en-US');
+}

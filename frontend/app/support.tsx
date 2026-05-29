@@ -1,225 +1,149 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  RefreshControl,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/utils/api';
-import { colors, spacing, radius, fonts, shadows } from '@/src/utils/theme';
-import { notify } from '@/src/utils/dialog';
+import { useSession } from '@/src/ctx';
+import { colors, radius, spacing, fonts } from '@/src/utils/theme';
 
-type Message = {
-  id: string;
-  thread_id: string;
-  sender: 'user' | 'admin';
-  sender_email?: string;
-  body: string;
-  created_at: string;
-  read_at?: string | null;
-};
+type FAQ = { id: string; q: string; a: string };
+type Msg = { id: string; sender: 'user' | 'admin'; body: string; created_at: string; ai_generated?: boolean };
 
-type Thread = {
-  id: string;
-  status: 'open' | 'closed' | string;
-  last_message_at?: string | null;
-  last_message_from?: 'user' | 'admin' | null;
-  unread_user_count?: number;
-  unread_admin_count?: number;
-};
-
-function formatStamp(iso: string): string {
-  try {
-    const d = new Date(iso);
-    const now = Date.now();
-    const diffMs = now - d.getTime();
-    const diffMin = diffMs / 60_000;
-    if (diffMin < 1) return 'just now';
-    if (diffMin < 60) return `${Math.floor(diffMin)}m ago`;
-    if (diffMin < 60 * 24) return `${Math.floor(diffMin / 60)}h ago`;
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  } catch {
-    return iso;
-  }
-}
-
-export default function SupportScreen() {
+export default function Support() {
   const router = useRouter();
-  const [thread, setThread] = useState<Thread | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [draft, setDraft] = useState('');
-  const [sending, setSending] = useState(false);
-  const [slaHours, setSlaHours] = useState(48);
+  const { user } = useSession();
+  const [faqs, setFaqs] = useState<FAQ[]>([]);
+  const [thread, setThread] = useState<Msg[]>([]);
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  const load = useCallback(async () => {
+  const loadFaqs = useCallback(async () => {
+    try {
+      const r = await api('/faqs', { auth: false });
+      setFaqs(r.faqs || []);
+    } catch {}
+  }, []);
+
+  const loadThread = useCallback(async () => {
     try {
       const r = await api('/support/thread');
-      setThread(r.thread || null);
-      setMessages(r.messages || []);
-      if (typeof r.sla_hours === 'number') setSlaHours(r.sla_hours);
-    } catch (e: any) {
-      // quiet; the screen still works empty
-    } finally {
-      setLoading(false);
-    }
+      setThread(r.messages || []);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    } catch {}
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadFaqs();
+    loadThread();
+  }, [loadFaqs, loadThread]);
 
-  // Refresh on focus + every 12s while the screen is foregrounded so a reply
-  // from the operator lands without manual pull-to-refresh.
-  useFocusEffect(
-    useCallback(() => {
-      load();
-      const t = setInterval(load, 12_000);
-      return () => clearInterval(t);
-    }, [load])
-  );
-
-  // Auto-scroll to bottom whenever message list grows.
-  useEffect(() => {
-    const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
-    return () => clearTimeout(t);
-  }, [messages.length]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
-
-  const onSend = async () => {
-    const body = draft.trim();
-    if (!body) return;
-    setSending(true);
+  const send = async () => {
+    const text = body.trim();
+    if (!text) return;
+    setBody('');
+    setBusy(true);
     try {
-      const r = await api('/support/messages', {
-        method: 'POST',
-        body: JSON.stringify({ body }),
-      });
-      if (r?.message) {
-        setMessages((prev) => [...prev, r.message]);
-      }
-      setDraft('');
+      await api('/support/ai-reply', { method: 'POST', body: JSON.stringify({ body: text }) });
+      await loadThread();
     } catch (e: any) {
-      notify('Could not send', e?.message || 'Please try again.');
+      // ignore
     } finally {
-      setSending(false);
+      setBusy(false);
     }
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const useSuggestion = (q: string) => {
+    setBody(q);
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Ionicons name="chevron-back" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.title}>Premium Support</Text>
-            <Text style={styles.subtitle}>
-              {thread?.status === 'closed' ? 'Thread closed by operator' : `We reply within ${slaHours} hours`}
-            </Text>
-          </View>
-          <View style={styles.statusDot} />
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.back}>
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
+        </TouchableOpacity>
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <Text style={styles.title}>Support</Text>
+          <Text style={styles.subtitle}>{user?.ad_free ? 'Priority queue · 24h SLA' : 'AI + human team'}</Text>
         </View>
+        <View style={{ width: 32 }} />
+      </View>
 
-        {/* Message list */}
-        <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={styles.scroll}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-          keyboardShouldPersistTaps="handled"
-        >
-          {messages.length === 0 ? (
-            <View style={styles.emptyBlock}>
-              <Ionicons name="chatbubble-ellipses" size={36} color={colors.primary} />
-              <Text style={styles.emptyTitle}>Send us your first message</Text>
-              <Text style={styles.emptyBody}>
-                Tell us how we can help. Our team responds within {slaHours} hours, Monday–Sunday.
-              </Text>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          {/* FAQ tiles */}
+          {thread.length === 0 ? (
+            <View>
+              <Text style={styles.section}>Quick answers</Text>
+              {faqs.slice(0, 8).map((f) => (
+                <TouchableOpacity
+                  key={f.id}
+                  style={styles.faqTile}
+                  onPress={() => setExpanded(expanded === f.id ? null : f.id)}
+                  testID={`faq-${f.id}`}
+                >
+                  <View style={styles.faqRow}>
+                    <Text style={styles.faqQ}>{f.q}</Text>
+                    <Ionicons name={expanded === f.id ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
+                  </View>
+                  {expanded === f.id ? (
+                    <View>
+                      <Text style={styles.faqA}>{f.a}</Text>
+                      <TouchableOpacity onPress={() => useSuggestion(f.q)} style={styles.faqAskBtn}>
+                        <Text style={styles.faqAskText}>Ask follow-up ›</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+              ))}
+              <View style={styles.hint}>
+                <Ionicons name="sparkles" size={14} color={colors.primary} />
+                <Text style={styles.hintText}>Or type your question below — our AI assistant + team will respond.</Text>
+              </View>
             </View>
           ) : (
-            messages.map((m) => {
-              const mine = m.sender === 'user';
-              return (
-                <View
-                  key={m.id}
-                  testID={`support-msg-${m.id}`}
-                  style={[styles.row, mine ? styles.rowMine : styles.rowTheirs]}
-                >
-                  <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-                    {!mine ? (
-                      <Text style={styles.bubbleAuthor}>OPERATOR</Text>
-                    ) : null}
-                    <Text style={[styles.bubbleBody, mine && { color: colors.bg }]}>{m.body}</Text>
-                    <Text style={[styles.bubbleStamp, mine && { color: 'rgba(11,14,20,0.6)' }]}>
-                      {formatStamp(m.created_at)}
-                    </Text>
-                  </View>
+            <View>
+              {thread.map((m) => (
+                <View key={m.id} style={[styles.bubble, m.sender === 'user' ? styles.userBubble : styles.adminBubble]}>
+                  {m.sender === 'admin' ? (
+                    <View style={styles.adminTag}>
+                      <Ionicons name={m.ai_generated ? 'sparkles' : 'shield-checkmark'} size={10} color={m.ai_generated ? colors.secondary : colors.primary} />
+                      <Text style={[styles.adminLabel, m.ai_generated && { color: colors.secondary }]}>
+                        {m.ai_generated ? 'AI assistant' : 'Hashrate Support'}
+                      </Text>
+                    </View>
+                  ) : null}
+                  <Text style={[styles.bubbleText, m.sender === 'user' ? { color: colors.bg } : { color: colors.text }]}>{m.body}</Text>
                 </View>
-              );
-            })
+              ))}
+              {busy ? (
+                <View style={[styles.bubble, styles.adminBubble]}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+              ) : null}
+            </View>
           )}
+          <View style={{ height: 80 }} />
         </ScrollView>
 
-        {/* Composer */}
         <View style={styles.composer}>
           <TextInput
-            testID="support-composer-input"
-            value={draft}
-            onChangeText={setDraft}
-            placeholder={
-              thread?.status === 'closed'
-                ? 'Send a new message to reopen the thread'
-                : 'Type your message…'
-            }
+            value={body}
+            onChangeText={setBody}
+            placeholder="Type your question..."
             placeholderTextColor={colors.textTertiary}
             style={styles.input}
             multiline
-            maxLength={2000}
-            editable={!sending}
+            testID="support-input"
           />
-          <TouchableOpacity
-            testID="support-send-btn"
-            onPress={onSend}
-            disabled={sending || !draft.trim()}
-            style={[styles.sendBtn, (sending || !draft.trim()) && { opacity: 0.4 }]}
-          >
-            {sending ? (
-              <ActivityIndicator color={colors.bg} />
-            ) : (
-              <Ionicons name="send" size={18} color={colors.bg} />
-            )}
+          <TouchableOpacity onPress={send} disabled={!body.trim() || busy} style={[styles.sendBtn, (!body.trim() || busy) && styles.sendMuted]} testID="support-send-btn">
+            <Ionicons name="arrow-up" size={18} color={colors.bg} />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -229,102 +153,28 @@ export default function SupportScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSoft,
-  },
-  title: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  back: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
+  title: { color: colors.text, fontSize: 17, fontWeight: '800' },
   subtitle: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.primary,
-  },
-  scroll: {
-    flexGrow: 1,
-    padding: spacing.md,
-    paddingBottom: spacing.lg,
-    gap: spacing.sm,
-  },
-  emptyBlock: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    gap: spacing.sm,
-  },
-  emptyTitle: { color: colors.text, fontSize: 16, fontWeight: '700', marginTop: spacing.sm },
-  emptyBody: { color: colors.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 19 },
-  row: { flexDirection: 'row', marginVertical: 4 },
-  rowMine: { justifyContent: 'flex-end' },
-  rowTheirs: { justifyContent: 'flex-start' },
-  bubble: {
-    maxWidth: '82%',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: 18,
-  },
-  bubbleMine: {
-    backgroundColor: colors.primary,
-    borderBottomRightRadius: 4,
-  },
-  bubbleTheirs: {
-    backgroundColor: colors.surface,
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-  },
-  bubbleAuthor: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: colors.primary,
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  bubbleBody: { color: colors.text, fontSize: 14, lineHeight: 20 },
-  bubbleStamp: {
-    fontSize: 10,
-    color: colors.textTertiary,
-    marginTop: 4,
-    alignSelf: 'flex-end',
-  },
-  composer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSoft,
-    backgroundColor: colors.bg,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    color: colors.text,
-    fontSize: 14,
-    maxHeight: 140,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minHeight: 44,
-  },
-  sendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  scroll: { padding: spacing.lg },
+  section: { color: colors.textSecondary, fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: spacing.sm, textTransform: 'uppercase' },
+  faqTile: { padding: spacing.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSoft, borderRadius: radius.md, marginBottom: 8 },
+  faqRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  faqQ: { flex: 1, color: colors.text, fontSize: 13, fontWeight: '700' },
+  faqA: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 8 },
+  faqAskBtn: { marginTop: 8 },
+  faqAskText: { color: colors.primary, fontSize: 11, fontWeight: '800' },
+  hint: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.md, padding: spacing.sm },
+  hintText: { color: colors.textSecondary, fontSize: 11, fontStyle: 'italic' },
+  bubble: { padding: 12, borderRadius: 14, marginVertical: 4, maxWidth: '85%' },
+  userBubble: { backgroundColor: colors.primary, alignSelf: 'flex-end' },
+  adminBubble: { backgroundColor: colors.surface, alignSelf: 'flex-start', borderWidth: 1, borderColor: colors.borderSoft },
+  adminTag: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
+  adminLabel: { color: colors.primary, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  bubbleText: { fontSize: 13, lineHeight: 18 },
+  composer: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.borderSoft, backgroundColor: colors.bg },
+  input: { flex: 1, color: colors.text, fontSize: 13, backgroundColor: colors.surface, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, maxHeight: 100 },
+  sendBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  sendMuted: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSoft },
 });

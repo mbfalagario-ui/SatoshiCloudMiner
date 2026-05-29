@@ -152,6 +152,7 @@ export default function AdminAnalytics() {
           <QuickBtn icon="people" label="Users" onPress={() => router.push('/admin/users')} />
           <QuickBtn icon="swap-horizontal" label="Txns" onPress={() => router.push('/admin/transactions')} />
           <QuickBtn icon="chatbubbles" label="Support" badge={supportUnread} onPress={() => router.push('/admin/support' as any)} />
+          <QuickBtn icon="analytics" label="Strategist" onPress={() => router.push('/admin/strategist' as any)} />
         </View>
 
         {/* Headline cards */}
