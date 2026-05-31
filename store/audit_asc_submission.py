@@ -190,13 +190,28 @@ with a._http() as c:
     for loc in locs:
         la = loc.get("attributes") or {}
         lang = la.get("locale", "?")
+        # Per the C2 decision, the URL host is intentionally kept on the
+        # legacy domain (satoshicloudminer.app/hashrate). Strip the host
+        # from the URL fields before string-matching so we only flag
+        # *content* that still has the Satoshi brand name.
+        def _clean_url(s: str | None) -> str:
+            if not s: return ""
+            # remove satoshicloudminer.app substring (intentional)
+            return s.lower().replace("satoshicloudminer.app", "")
+        desc_lo = (la.get("description") or "").lower()
+        kw_lo = (la.get("keywords") or "").lower()
+        promo_lo = (la.get("promotionalText") or "").lower()
+        mu_lo = _clean_url(la.get("marketingUrl"))
+        su_lo = _clean_url(la.get("supportUrl"))
         check("Localization",
-              f"{lang} name no 'satoshi'",
-              "satoshi" not in (la.get("description") or "").lower()
-              and "satoshi" not in (la.get("keywords") or "").lower()
-              and "satoshi" not in (la.get("promotionalText") or "").lower(),
-              "no 'satoshi' references",
-              f"'satoshi' STILL present in description/keywords/promo")
+              f"{lang} no 'satoshi' branding (description / keywords / promo / URL paths)",
+              "satoshi" not in desc_lo
+              and "satoshi" not in kw_lo
+              and "satoshi" not in promo_lo
+              and "satoshi" not in mu_lo
+              and "satoshi" not in su_lo,
+              "no 'satoshi' branding (legacy domain host is intentional)",
+              "'satoshi' STILL present in some content field")
         check("Localization", f"{lang} description",
               bool(la.get("description")) and len(la.get("description") or "") > 200,
               f"len={len(la.get('description') or '')}",
