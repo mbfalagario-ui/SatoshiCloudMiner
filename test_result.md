@@ -1615,6 +1615,65 @@ backend_build22:
 
           🛑 STILL PAUSED for user TestFlight verification.
 
+      - working: true
+        agent: "main"
+        comment: |
+          SUBMITTED TO APPLE REVIEW + AUTOSHIP ARMED + SMOKE TEST CLEAN.
+
+          User requested end-of-night handoff: submit current Build #23
+          to App Store Review, arm autoship for next cycle, smoke test.
+
+          Submission flow (resolved 3 ASC API blockers in sequence):
+            1. Tried POST /v1/appStoreVersions → 409 "1.0.0 still REJECTED
+               blocks new version creation".
+            2. Workaround: PATCHED versionString of existing REJECTED v1.0.0
+               slot → 1.0.1. Attached Build #23 (id c0a39062-453f-4690-b867-
+               f35e0295dfc3). Updated localized description/keywords
+               (whatsNew skipped — Apple rejects edits on first-1.0 family).
+            3. Tried PATCH submitted=true on old reviewSubmission
+               (2668dda8-...) → 409 "version not ready yet". Stuck preview
+               upload (1e5f0fa7-...) blocked everything.
+            4. DELETED stuck preview upload (204). Tried again → 409
+               "version already part of another submission".
+            5. PATCHED old reviewSubmission canceled:true → state CANCELING
+               → COMPLETE.
+            6. Created fresh reviewSubmission (6e443229-c592-4524-90ac-
+               9851df96bef6). Added v1.0.1 item (201). PATCHED submitted=
+               true (200). 🚀 state=WAITING_FOR_REVIEW.
+
+          ASC links:
+            Version    : 1.0.1 / b304ea37-c58c-4145-a14a-b7cd50fc6966
+            Build      : 23 / c0a39062-453f-4690-b867-f35e0295dfc3
+            Submission : 6e443229-c592-4524-90ac-9851df96bef6
+            Submitted  : 2026-05-30 00:13:54 UTC
+            State      : WAITING_FOR_REVIEW
+            Track at   : https://appstoreconnect.apple.com/apps/6773104756/appstore
+
+          Autoship armed (backend/.env):
+            AUTO_SHIP_NEXT_VERSION="1.0.2"
+            AUTO_SHIP_NEXT_BUILD="24"
+          Backend restarted, autoship background job picks these up on
+          the next tick. When user uploads a v1.0.2 / Build #24 and
+          v1.0.1 reaches READY_FOR_SALE, the job auto-submits.
+
+          Smoke test (no agent used — direct curl/python):
+            ✅ /api/ (health)
+            ✅ /api/packages — 10 SKUs
+            ✅ /api/store/cross-sell — available
+            ✅ /api/daily-checkin/status — 7-day ladder
+            ✅ /api/ads/status — 30/day cap
+            ✅ /api/earnings — tick fields present
+            ✅ /api/withdraw/methods — admin unlimited
+            ✅ /api/redeem/quote — fee preview works
+            ✅ /api/faqs — 18 entries
+            ✅ /api/admin/config — payout_multiplier=0.85
+            ✅ /api/system/network — live mempool data 1008 EH/s
+            11/11 PASS.
+
+          User can now sleep. Apple will email when review completes
+          (typically 24-48h). Autoship handles the next release cycle
+          without further intervention.
+
 agent_communication:
     - agent: "main"
       message: |
