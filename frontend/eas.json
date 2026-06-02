@@ -27,6 +27,12 @@
       "ios": {
         "resourceClass": "m-medium"
       }
+    },
+    "production-prod-domain": {
+      "extends": "production",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.hashratecloudminer.com"
+      }
     }
   },
   "submit": {

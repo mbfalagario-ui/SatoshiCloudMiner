@@ -2957,6 +2957,51 @@ async def root():
 # Include router
 app.include_router(api)
 
+
+# ──────────────────────────────────────────────────────────────────────
+# Clean public URLs (no /api prefix) for App Store metadata + marketing.
+# These ONLY work when the FastAPI app is reached directly (production
+# Fly.io deployment). The local-preview Kubernetes ingress strips
+# everything that isn't /api/* so these are not reachable from the
+# preview URL — that's expected.
+# ──────────────────────────────────────────────────────────────────────
+@app.get("/support", response_class=HTMLResponse, include_in_schema=False)
+async def public_support_root():
+    """Apple Guideline 1.5-compliant support page on clean URL."""
+    return await public_support_page()
+
+
+@app.get("/privacy", response_class=HTMLResponse, include_in_schema=False)
+async def public_privacy_root():
+    """App Store privacy policy on clean URL."""
+    return await public_privacy_page()
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def public_marketing_root():
+    """Lightweight marketing landing page used as the ASC marketingUrl."""
+    return HTMLResponse(f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hashrate Cloud Miner</title><style>{_PAGE_CSS}</style></head>
+<body>
+<h1>Hashrate Cloud Miner</h1>
+<p>Earn indicative Bitcoin rewards through ad-funded virtual cloud mining.
+Daily check-ins, rewarded ads, and one-time hashrate boosts power your
+mining sessions — all funded by advertising revenue, never deposits or
+guaranteed returns.</p>
+<h2>Get the app</h2>
+<p>Available on the <a href="https://apps.apple.com/app/id6773104756">App Store</a>.</p>
+<h2>Resources</h2>
+<ul>
+<li><a href="/support">Support</a></li>
+<li><a href="/privacy">Privacy Policy</a></li>
+</ul>
+<footer>© {datetime.now(timezone.utc).year} Hashrate Cloud Miner ·
+<a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a></footer>
+</body></html>""")
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

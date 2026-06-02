@@ -1,0 +1,34 @@
+# Never bake secrets into the image — use `fly secrets set` instead.
+.env
+.env.*
+keys/
+*.p8
+
+# Dev artefacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+node_modules/
+
+# Tests (we don't run tests inside the prod image)
+tests/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*.log
+
+# Docs that don't belong in a runtime image
+README.md
+*.md

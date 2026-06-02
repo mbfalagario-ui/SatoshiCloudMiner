@@ -1,0 +1,84 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Fly.io application config — Hashrate Cloud Miner backend
+#
+# Stays within the FREE tier:
+#   • 1 shared-cpu-1x machine, 256 MB RAM
+#   • auto_stop_machines = false  (never sleep — App Store reviewers must
+#                                  always reach a live backend)
+#   • min_machines_running = 1    (always-on)
+#
+# Free tier budget: 2,340 vCPU-hours/month per org for shared-cpu-1x.
+# 1 always-on machine = 24h × 31d = 744 vCPU-hours/month → well within budget.
+#
+# Custom domain: api.hashratecloudminer.com  (configured via `fly certs add`).
+# ─────────────────────────────────────────────────────────────────────────────
+
+app = "hashrate-cloud-miner-api"
+primary_region = "iad"   # US-East (Ashburn) — closest Fly region to mempool.space & coinbase APIs
+kill_signal = "SIGINT"
+kill_timeout = 10
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8001"
+  PYTHONUNBUFFERED = "1"
+  # Non-secret env vars only. Secrets (JWT_SECRET_KEY, BLINK_API_KEY,
+  # EMERGENT_LLM_KEY, APPLE_PRIVATE_KEY_B64, MONGO_URL, etc.) go in:
+  #   fly secrets set NAME=value
+  DB_NAME = "hashcloud_db"
+  JWT_ALGORITHM = "HS256"
+  ACCESS_TOKEN_EXPIRES_MINUTES = "10080"
+  APPLE_PRIVATE_KEY_PATH = "/app/keys/SubscriptionKey.p8"
+  APPLE_KEY_ID = "J55DSC44V5"
+  APPLE_ISSUER_ID = "d3284874-7bd8-4eff-b272-c9ef0122df9a"
+  APPLE_BUNDLE_ID = "app.satoshicloudminer"
+  APPLE_TEAM_ID = "UHF3KNM9F9"
+  APPLE_ENVIRONMENT_OVERRIDE = ""
+  BTCPAY_BASE_URL = "https://mainnet.demo.btcpayserver.org"
+  BTCPAY_STORE_ID = "7eehdw53R6wkchCvizRvJdQns8X11zqbtxQE32turhND"
+  BLINK_BTC_WALLET_ID = "bb7ac183-16e0-4b8f-94ac-9f5ee7cf5731"
+  BLINK_USD_WALLET_ID = "381c0e09-f434-492a-a366-8e260c8da380"
+  ADMOB_APP_ID = "ca-app-pub-6035003811280283~6151737735"
+  ADMOB_REWARDED_AD_UNIT_ID = "ca-app-pub-6035003811280283/1502046287"
+  ADMOB_SSV_KEY_ID = "3335741209"
+  PAYOUT_MULTIPLIER = "0.85"
+  MIN_REDEEM_SATS = "25000"
+  MAX_REDEEM_SATS = "50000"
+  REDEEM_FEE_SATS = "150"
+  REDEEM_COOLDOWN_HOURS = "24"
+  AD_DAILY_CAP = "30"
+  CROSS_SELL_DISCOUNT_PCT = "25"
+  SCHEMA_VERSION = "v22_admob_pivot"
+  SUPPORT_EMAIL = "support@hashratecloudminer.com"
+  AUTO_SHIP_NEXT_VERSION = "1.0.2"
+  AUTO_SHIP_NEXT_BUILD = "24"
+  ADMIN_EMAIL = "mbfalagario@gmail.com"
+
+[http_service]
+  internal_port = 8001
+  force_https = true               # Apple ATS-compliant
+  auto_stop_machines = false       # NEVER let the machine sleep — that 404s the reviewer
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  # Cheap-and-fast HTTP healthcheck against a no-auth, no-DB endpoint.
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "15s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/system/btc_rate"
+    protocol = "http"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512    # 512 MB (free tier covers up to 256 MB always-on; bump if needed)
