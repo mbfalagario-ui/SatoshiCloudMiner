@@ -28,20 +28,50 @@ export default function SignUp() {
   const [busy, setBusy] = useState(false);
 
   const onSubmit = async () => {
-    if (!email.includes('@') || password.length < 6) {
-      Alert.alert('Invalid input', 'Please enter a valid email and a password of at least 6 characters.');
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedRef = referral.trim();
+
+    // F2 — Proper email validation (matches "x@y.z" style, blocks blanks/typos).
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (!emailRe.test(trimmedEmail)) {
+      Alert.alert(
+        'Invalid email',
+        'Please enter a valid email address (e.g. you@example.com).',
+      );
+      return;
+    }
+    if (password.length < 6) {
+      Alert.alert(
+        'Password too short',
+        'Please use at least 6 characters.',
+      );
+      return;
+    }
+    if (password.length > 128) {
+      Alert.alert(
+        'Password too long',
+        'Please use 128 characters or fewer.',
+      );
       return;
     }
     if (!agree) {
-      Alert.alert('Terms required', 'Please accept the Terms of Service and Privacy Policy.');
+      Alert.alert(
+        'Terms required',
+        'Please accept the Terms of Service and Privacy Policy.',
+      );
       return;
     }
     setBusy(true);
     try {
-      await signUp(email.trim().toLowerCase(), password, referral.trim() || undefined);
+      await signUp(trimmedEmail, password, trimmedRef || undefined);
       router.replace('/(tabs)');
     } catch (e: any) {
-      Alert.alert('Sign up failed', e?.message ?? 'Please try again.');
+      // F3 — Surface the backend's specific reason instead of a generic alert.
+      const reason =
+        e?.message ||
+        e?.detail ||
+        'Please check your email and password, then try again.';
+      Alert.alert('Sign up failed', String(reason));
     } finally {
       setBusy(false);
     }
