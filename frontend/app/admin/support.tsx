@@ -164,7 +164,7 @@ export default function AdminSupport() {
   }, [messages.length]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       {/* Stats header */}
       <View style={styles.statsHeader}>
         <View style={styles.stat}>

@@ -139,7 +139,7 @@ export default function AdminAnalytics() {
   const agents = aiAgents.length > 0 ? aiAgents : (data.ai_agents_today || []);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={colors.primary} />}
@@ -417,9 +417,14 @@ function KPI({ label, value, sub, icon, tone }: any) {
   return (
     <View style={styles.kpi}>
       <Ionicons name={icon} size={16} color={accent} />
-      <Text style={styles.kpiLabel}>{label}</Text>
-      <Text style={[styles.kpiValue, { color: accent }]}>{value}</Text>
-      {sub ? <Text style={styles.kpiSub}>{sub}</Text> : null}
+      <Text style={styles.kpiLabel} numberOfLines={1}>{label}</Text>
+      <Text
+        style={[styles.kpiValue, { color: accent }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+      >{value}</Text>
+      {sub ? <Text style={styles.kpiSub} numberOfLines={1}>{sub}</Text> : null}
     </View>
   );
 }
@@ -562,11 +567,14 @@ const styles = StyleSheet.create({
   smallBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
     backgroundColor: colors.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    minHeight: 44,         // Apple HIG: 44pt minimum tap target
+    minWidth: 44,
+    borderRadius: 10,
   },
   smallBtnText: { color: colors.bg, fontSize: 11, fontWeight: '800' },
   primaryBtn: {

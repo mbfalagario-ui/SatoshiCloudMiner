@@ -4,7 +4,6 @@ import {
   ActivityIndicator, TextInput, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/utils/api';
 import { colors, radius, spacing, fonts, fmtUsd } from '@/src/utils/theme';
@@ -13,7 +12,6 @@ import { colors, radius, spacing, fonts, fmtUsd } from '@/src/utils/theme';
 // one place. Relocated from the home page so the consumer surface stays
 // focused on the hashrate / AdMob model.
 export default function Strategist() {
-  const router = useRouter();
   const [agents, setAgents] = useState<any[]>([]);
   const [ticker, setTicker] = useState<string>('');
   const [config, setConfig] = useState<any>(null);
@@ -80,14 +78,7 @@ export default function Strategist() {
   ];
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.back}>
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={styles.title}>Reserve Strategist</Text>
-        <View style={{ width: 32 }} />
-      </View>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}

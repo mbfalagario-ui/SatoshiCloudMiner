@@ -37,13 +37,36 @@ export default function AdminLayout() {
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: colors.bg },
+        // Native iOS look for any screen that opts into a header
+        headerStyle: { backgroundColor: colors.bg },
+        headerTitleStyle: { color: colors.text, fontWeight: '800', fontSize: 17 },
+        headerTintColor: colors.primary,         // chevron + tappable text colour
+        headerShadowVisible: false,
+        headerBackTitle: 'Back',
       }}
     >
+      {/* Root dashboard — no native header (it has its own in-screen title) */}
       <Stack.Screen name="index" />
-      <Stack.Screen name="users" />
-      <Stack.Screen name="transactions" />
-      <Stack.Screen name="support" />
-      <Stack.Screen name="strategist" />
+
+      {/* Sub-screens get a native iOS header bar with chevron-back + title.
+          This also fixes the "content under Dynamic Island" bug because the
+          native header lives in the safe area. */}
+      <Stack.Screen
+        name="users"
+        options={{ headerShown: true, title: 'Users' }}
+      />
+      <Stack.Screen
+        name="transactions"
+        options={{ headerShown: true, title: 'Transactions' }}
+      />
+      <Stack.Screen
+        name="support"
+        options={{ headerShown: true, title: 'Support' }}
+      />
+      <Stack.Screen
+        name="strategist"
+        options={{ headerShown: true, title: 'AI Strategist' }}
+      />
     </Stack>
   );
 }
