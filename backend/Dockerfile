@@ -53,6 +53,7 @@ COPY --from=builder /opt/venv /opt/venv
 COPY server.py ./
 COPY integrations/ ./integrations/
 COPY services/ ./services/
+COPY assets/ ./assets/
 COPY start.sh ./
 RUN chmod +x ./start.sh
 

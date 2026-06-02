@@ -48,6 +48,7 @@ def start_jobs(
     auto_reinvest: Callable[..., Awaitable[Any]],
     refresh_agents: Callable[..., Awaitable[Any]],
     auto_ship: Optional[Callable[..., Awaitable[Any]]] = None,
+    uptime_check: Optional[Callable[..., Awaitable[Any]]] = None,
 ) -> None:
     s = get_scheduler()
     if s.running:
@@ -61,6 +62,11 @@ def start_jobs(
         # it no-ops until the main 1.0 version is approved.
         s.add_job(_safe(auto_ship), IntervalTrigger(minutes=30), id="auto_ship",
                   replace_existing=True, next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30))
+    if uptime_check is not None:
+        # Hit the public-facing prod URLs every 5 min. Alerts via ntfy.sh
+        # on 2 consecutive failures.
+        s.add_job(_safe(uptime_check), IntervalTrigger(minutes=5), id="uptime_check",
+                  replace_existing=True, next_run_time=datetime.now(timezone.utc) + timedelta(seconds=60))
     s.start()
     logger.info("Background scheduler started.")
 

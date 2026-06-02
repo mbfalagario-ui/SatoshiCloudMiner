@@ -1206,200 +1206,279 @@ async def transactions(
 # external domain status. They live under /api/* so the same /api ingress
 # rule serves them, and they're plain HTML so they render fine in any
 # browser the App Review team uses.
-_PAGE_CSS = (
-    "body{max-width:780px;margin:32px auto;padding:0 20px;"
-    "font-family:-apple-system,BlinkMacSystemFont,Helvetica Neue,sans-serif;"
-    "color:#1d1d1f;background:#fbfbfd;line-height:1.6}"
-    "h1{font-size:32px;font-weight:800;margin:0 0 4px}"
-    "h2{font-size:20px;margin-top:30px;color:#0a84ff}"
-    "p,li{font-size:15px}"
-    "code{background:#eef;padding:2px 6px;border-radius:4px;font-size:13px}"
-    "footer{margin-top:48px;color:#86868b;font-size:13px;border-top:1px solid #d2d2d7;padding-top:16px}"
-    "a{color:#0a84ff;text-decoration:none}a:hover{text-decoration:underline}"
-)
+#
+# Design language matches the app's dark/neon theme defined in
+# /app/frontend/src/utils/theme.ts (bg=#0B0E14, primary=#00FFA3, etc.)
+_PAGE_CSS = """
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#0B0E14;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Helvetica Neue',Arial,sans-serif;line-height:1.65;-webkit-font-smoothing:antialiased}
+body{min-height:100vh;display:flex;flex-direction:column}
+.hcm-bg{background:radial-gradient(circle at 20% 0%,rgba(0,255,163,0.08) 0%,transparent 50%),radial-gradient(circle at 80% 100%,rgba(0,209,255,0.06) 0%,transparent 50%),#0B0E14;flex:1;display:flex;flex-direction:column}
+.hcm-shell{max-width:780px;margin:0 auto;width:100%;padding:0 24px}
+.hcm-header{padding:32px 24px 8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px}
+.hcm-brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:#FFFFFF}
+.hcm-brand img{width:40px;height:40px;border-radius:9px;box-shadow:0 0 24px rgba(0,255,163,0.25)}
+.hcm-brand .name{font-size:18px;font-weight:800;letter-spacing:-0.3px}
+.hcm-brand .tag{display:block;font-size:11px;color:#00FFA3;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-top:2px}
+.hcm-nav{display:flex;gap:24px}
+.hcm-nav a{color:#A0A5B5;text-decoration:none;font-size:13px;font-weight:600;letter-spacing:0.2px}
+.hcm-nav a:hover{color:#00FFA3}
+.hcm-main{flex:1;padding:32px 24px 64px}
+.hcm-card{background:linear-gradient(180deg,#151A22 0%,#0F141C 100%);border:1px solid rgba(255,255,255,0.06);border-radius:24px;padding:32px;box-shadow:0 12px 48px rgba(0,0,0,0.45)}
+h1{font-size:32px;font-weight:900;letter-spacing:-0.8px;margin-bottom:8px}
+h1+p.lede{font-size:16px;color:#A0A5B5;margin-bottom:24px}
+h2{font-size:18px;font-weight:800;color:#00FFA3;letter-spacing:0.3px;margin-top:32px;margin-bottom:12px;text-transform:uppercase}
+h2:first-of-type{margin-top:0}
+h3{font-size:16px;font-weight:700;color:#FFFFFF;margin-top:20px;margin-bottom:6px}
+p,li{font-size:15px;color:#D5D7DD;margin-bottom:10px}
+ul{padding-left:20px;margin-bottom:12px}
+ul li{margin-bottom:6px}
+strong{color:#FFFFFF;font-weight:700}
+em{color:#00FFA3;font-style:normal;font-weight:600}
+a{color:#00FFA3;text-decoration:none;transition:opacity 0.15s}
+a:hover{opacity:0.7}
+code{background:rgba(0,255,163,0.10);color:#00FFA3;padding:2px 8px;border-radius:6px;font-family:Menlo,Monaco,'Courier New',monospace;font-size:13px}
+.hcm-hero{text-align:center;padding:24px 0 8px}
+.hcm-hero h1{font-size:42px;margin-bottom:12px;background:linear-gradient(90deg,#FFFFFF 0%,#00FFA3 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hcm-hero p.lede{font-size:18px}
+.hcm-cta{display:inline-flex;align-items:center;gap:8px;background:#00FFA3;color:#0B0E14;padding:14px 24px;border-radius:14px;font-weight:800;font-size:15px;text-decoration:none;margin-top:24px;box-shadow:0 0 32px rgba(0,255,163,0.40);transition:transform 0.15s}
+.hcm-cta:hover{transform:translateY(-2px);opacity:1}
+.hcm-cta svg{flex-shrink:0}
+.hcm-features{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:32px}
+.hcm-feat{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:16px;padding:20px}
+.hcm-feat .icon{font-size:24px;margin-bottom:8px}
+.hcm-feat h4{color:#00FFA3;font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px}
+.hcm-feat p{font-size:14px;margin-bottom:0;color:#A0A5B5}
+.hcm-footer{padding:24px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;font-size:12px;color:#686D7B}
+.hcm-footer a{margin:0 8px}
+.hcm-disclaimer{margin-top:32px;padding:16px;border-radius:12px;background:rgba(255,184,0,0.06);border:1px solid rgba(255,184,0,0.15);font-size:13px;color:#A0A5B5;line-height:1.55}
+.hcm-disclaimer::before{content:'⚠️ ';margin-right:4px}
+"""
+
+
+def _render_page(title: str, body_html: str, *, active_nav: str = "") -> str:
+    """Render an HTML page with the branded header, content, and footer."""
+    def _link(label: str, href: str) -> str:
+        is_active = label.lower() == active_nav.lower()
+        style = ' style="color:#00FFA3"' if is_active else ""
+        return f'<a href="{href}"{style}>{label}</a>'
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0B0E14">
+<title>{title}</title>
+<link rel="icon" type="image/png" href="/icon.png">
+<style>{_PAGE_CSS}</style></head>
+<body>
+<div class="hcm-bg">
+  <header class="hcm-header hcm-shell">
+    <a class="hcm-brand" href="/">
+      <img src="/icon.png" alt="Hashrate Cloud Miner">
+      <span>
+        <span class="name">Hashrate Cloud Miner</span>
+        <span class="tag">⚡ Cloud Mining</span>
+      </span>
+    </a>
+    <nav class="hcm-nav">
+      {_link('Home', '/')}
+      {_link('Support', '/support')}
+      {_link('Privacy', '/privacy')}
+    </nav>
+  </header>
+
+  <main class="hcm-main hcm-shell">
+    {body_html}
+  </main>
+
+  <footer class="hcm-footer">
+    &copy; {datetime.now(timezone.utc).year} Hashrate Cloud Miner ·
+    {_link('Support', '/support')}·{_link('Privacy', '/privacy')}·
+    <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>
+  </footer>
+</div>
+</body></html>"""
 
 
 @api.get("/legal/support", response_class=HTMLResponse, include_in_schema=False)
 async def public_support_page():
     """Public-facing support page — Apple Review Guideline 1.5 compliant."""
-    return HTMLResponse(f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hashrate Cloud Miner — Support</title><style>{_PAGE_CSS}</style></head>
-<body>
-<h1>Hashrate Cloud Miner — Support</h1>
-<p><strong>App Store contact:</strong> {SUPPORT_EMAIL}</p>
-<p>We typically respond to support requests within 48 hours. Premium users
-(any active mining plan or the Ad-Free upgrade) receive priority support.</p>
+    body = f"""
+<div class="hcm-card">
+  <h1>Support</h1>
+  <p class="lede">We typically respond within 48 hours. Premium users (any
+  active mining plan or the Ad-Free upgrade) receive priority support.</p>
+  <p><strong>App Store contact:</strong> <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a></p>
 
-<h2>In-app support</h2>
-<p>The fastest way to reach us is the in-app <strong>Support</strong> chat
-(Profile → "Still need help? Chat with support"). The chat is staffed by
-our AI assistant grounded in our full FAQ knowledge base; if the AI can't
-answer, your message is routed to our human team.</p>
+  <h2>In-app support</h2>
+  <p>The fastest way to reach us is the in-app <em>Support</em> chat
+  (Profile → "Still need help? Chat with support"). The chat is staffed
+  by our AI assistant grounded in our full FAQ knowledge base; if the AI
+  can't answer, your message is routed to our human team.</p>
 
-<h2>Frequently Asked Questions</h2>
-<h3>What is hashrate in this app?</h3>
-<p>Hashrate is virtual computing power expressed in GH/s (gigahash per
-second). Higher hashrate produces higher <em>indicative earnings</em>.
-You earn hashrate from daily check-ins, rewarded ads, and one-time
-hashpower boost purchases.</p>
+  <h2>Frequently Asked Questions</h2>
 
-<h3>How does the daily check-in work?</h3>
-<p>Tap <em>Claim</em> each day to receive a hashrate boost that grows
-across 7 days: Day 1 = 1.2 GH/s, all the way up to Day 7 = 8.0 GH/s.
-Each boost lasts 24 hours. Miss a day and your streak resets to Day 1.</p>
+  <h3>What is hashrate in this app?</h3>
+  <p>Hashrate is virtual computing power expressed in GH/s (gigahash per
+  second). Higher hashrate produces higher <em>indicative earnings</em>.
+  You earn hashrate from daily check-ins, rewarded ads, and one-time
+  hashpower boost purchases.</p>
 
-<h3>How do rewarded ads work?</h3>
-<p>Watch short rewarded video ads to earn hashrate boosts. The reward
-scales as you watch more: 1.5 GH/s for the first few, up to 12.0 GH/s
-for later ones. You can watch up to 30 ads per day. Each ad's boost
-lasts 24 hours.</p>
+  <h3>How does the daily check-in work?</h3>
+  <p>Tap <em>Claim</em> each day to receive a hashrate boost that grows
+  across 7 days: Day 1 = 1.2 GH/s, all the way up to Day 7 = 8.0 GH/s.
+  Each boost lasts 24 hours. Miss a day and your streak resets to Day 1.</p>
 
-<h3>What are 'indicative earnings'?</h3>
-<p>Your indicative earnings are an estimate based on your virtual
-hashrate's share of the live Bitcoin network. <strong>Hashrate Cloud
-Miner does NOT hold, manage, or custody on-chain assets and is not
-a wallet, trading platform, or fund manager.</strong> Earnings shown
-are illustrative; final amounts depend on real network conditions
-and server records.</p>
+  <h3>How do rewarded ads work?</h3>
+  <p>Watch short rewarded video ads to earn hashrate boosts. The reward
+  scales as you watch more: 1.5 GH/s for the first few, up to 12.0 GH/s
+  for later ones. You can watch up to 30 ads per day. Each ad's boost
+  lasts 24 hours.</p>
 
-<h3>How do I redeem my earnings?</h3>
-<p>Open the <em>Earnings</em> tab → tap <em>Redeem</em> → select
-Lightning → paste your Lightning invoice or address (e.g.
-<code>user@speed.app</code>, <code>user@zbd.gg</code>, or a BOLT11
-invoice starting with <code>lnbc</code>) → enter the amount → confirm.
-Payouts are processed via the Lightning Network. Minimum redeem is
-25,000 sats and maximum is 50,000 sats per request.</p>
+  <h3>What are 'indicative earnings'?</h3>
+  <p>Your indicative earnings are an estimate based on your virtual
+  hashrate's share of the live Bitcoin network. <strong>Hashrate Cloud
+  Miner does NOT hold, manage, or custody on-chain assets and is not
+  a wallet, trading platform, or fund manager.</strong> Earnings shown
+  are illustrative; final amounts depend on real network conditions
+  and server records.</p>
 
-<h3>Are there fees on redemption?</h3>
-<p>A small Lightning Network fee is deducted from your balance at redeem
-time to cover routing costs. You will see the exact fee, total
-deduction, and your remaining balance in the confirmation modal before
-you tap Redeem.</p>
+  <h3>How do I redeem my earnings?</h3>
+  <p>Open the <em>Earnings</em> tab → tap <em>Redeem</em> → select
+  Lightning → paste your Lightning invoice or address (e.g.
+  <code>user@speed.app</code>, <code>user@zbd.gg</code>, or a BOLT11
+  invoice starting with <code>lnbc</code>) → enter the amount → confirm.
+  Payouts are processed via the Lightning Network. Minimum redeem is
+  25,000 sats and maximum is 50,000 sats per request.</p>
 
-<h3>What does the Ad-Free upgrade do?</h3>
-<p>The Ad-Free + Priority Support upgrade removes interstitial banner
-ads and routes your support requests to a faster queue. Rewarded
-video ads (which give you hashrate) remain available — they're opt-in
-only.</p>
+  <h3>Are there fees on redemption?</h3>
+  <p>A small Lightning Network fee is deducted from your balance at
+  redeem time to cover routing costs. You will see the exact fee, total
+  deduction, and your remaining balance in the confirmation modal
+  before you tap Redeem.</p>
 
-<h3>How do I delete my account?</h3>
-<p>Email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a> from the
-address you registered with and we'll permanently delete your account
-and any associated data within 14 days, in line with Apple's App Store
-Review guidelines and applicable data protection laws.</p>
+  <h3>What does the Ad-Free upgrade do?</h3>
+  <p>The Ad-Free + Priority Support upgrade removes interstitial banner
+  ads and routes your support requests to a faster queue. Rewarded
+  video ads (which give you hashrate) remain available — they're opt-in
+  only.</p>
 
-<footer>
-&copy; {now_utc().year} Hashrate Cloud Miner ·
-<a href="/api/legal/privacy">Privacy Policy</a> ·
-<a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>
-</footer>
-</body></html>""")
+  <h3>How do I delete my account?</h3>
+  <p>Email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a> from the
+  address you registered with and we'll permanently delete your account
+  and any associated data within 14 days, in line with Apple's App Store
+  Review guidelines and applicable data protection laws.</p>
+
+  <div class="hcm-disclaimer">
+    Earnings are <strong>indicative</strong> and depend on real Bitcoin
+    network conditions. This app does not hold, manage, or custody
+    on-chain assets; your wallet always remains in your sole control.
+  </div>
+</div>
+"""
+    return HTMLResponse(_render_page(
+        "Hashrate Cloud Miner — Support", body, active_nav="Support"))
 
 
 @api.get("/legal/privacy", response_class=HTMLResponse, include_in_schema=False)
 async def public_privacy_page():
     """Public-facing privacy policy — Apple Review Guideline 5.1.1 compliant."""
-    return HTMLResponse(f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hashrate Cloud Miner — Privacy Policy</title><style>{_PAGE_CSS}</style></head>
-<body>
-<h1>Hashrate Cloud Miner — Privacy Policy</h1>
-<p><strong>Effective date:</strong> June 2026</p>
+    body = f"""
+<div class="hcm-card">
+  <h1>Privacy Policy</h1>
+  <p class="lede"><strong>Effective date:</strong> June 2026</p>
 
-<p>This privacy policy describes how Hashrate Cloud Miner ("we", "our",
-"the app") collects, uses, and protects information about its users.
-This app is non-custodial — we never hold your private keys, seed
-phrase, or on-chain assets.</p>
+  <p>This privacy policy describes how Hashrate Cloud Miner ("we",
+  "our", "the app") collects, uses, and protects information about its
+  users. <strong>This app is non-custodial</strong> — we never hold
+  your private keys, seed phrase, or on-chain assets.</p>
 
-<h2>1. Data we collect</h2>
-<ul>
-  <li><strong>Account information:</strong> email address and a password
-  hash (we never store passwords in plain text).</li>
-  <li><strong>Activity data:</strong> daily check-in records, rewarded
-  ad view records, in-app purchase receipts (verified with Apple's
-  App Store Server API), and indicative-earnings ledger entries.</li>
-  <li><strong>Lightning addresses you choose to share</strong> at
-  redeem time. We store them only to fulfill that specific payout
-  request.</li>
-  <li><strong>Aggregated ad metrics</strong> via Google AdMob (per
-  AdMob's privacy policy). The app does not request the IDFA via
-  ATT and does not track users across apps.</li>
-</ul>
+  <h2>1. Data we collect</h2>
+  <ul>
+    <li><strong>Account information:</strong> email address and a
+    password hash (we never store passwords in plain text).</li>
+    <li><strong>Activity data:</strong> daily check-in records,
+    rewarded ad view records, in-app purchase receipts (verified with
+    Apple's App Store Server API), and indicative-earnings ledger
+    entries.</li>
+    <li><strong>Lightning addresses you choose to share</strong> at
+    redeem time. We store them only to fulfill that specific payout
+    request.</li>
+    <li><strong>Aggregated ad metrics</strong> via Google AdMob (per
+    AdMob's privacy policy). The app does not request the IDFA via
+    ATT and does not track users across apps.</li>
+  </ul>
 
-<h2>2. Data we do NOT collect</h2>
-<ul>
-  <li>We do not collect, store, or have access to your Lightning
-  wallet's private keys or seed phrase.</li>
-  <li>We do not custody any on-chain Bitcoin or cryptocurrency on
-  your behalf.</li>
-  <li>We do not access your contacts, microphone, camera, photos,
-  or location.</li>
-</ul>
+  <h2>2. Data we do NOT collect</h2>
+  <ul>
+    <li>We do not collect, store, or have access to your Lightning
+    wallet's private keys or seed phrase.</li>
+    <li>We do not custody any on-chain Bitcoin or cryptocurrency on
+    your behalf.</li>
+    <li>We do not access your contacts, microphone, camera, photos,
+    or location.</li>
+  </ul>
 
-<h2>3. How we use data</h2>
-<ul>
-  <li>To authenticate you and operate the app's features.</li>
-  <li>To compute indicative-earnings ledgers and process Lightning
-  redemptions you initiate.</li>
-  <li>To verify in-app purchases with Apple's App Store Server API.</li>
-  <li>To serve ads via Google AdMob (rewarded video + occasional
-  interstitial).</li>
-  <li>To respond to your support requests.</li>
-</ul>
+  <h2>3. How we use data</h2>
+  <ul>
+    <li>To authenticate you and operate the app's features.</li>
+    <li>To compute indicative-earnings ledgers and process Lightning
+    redemptions you initiate.</li>
+    <li>To verify in-app purchases with Apple's App Store Server API.</li>
+    <li>To serve ads via Google AdMob (rewarded video + occasional
+    interstitial).</li>
+    <li>To respond to your support requests.</li>
+  </ul>
 
-<h2>4. Third-party services</h2>
-<ul>
-  <li><strong>Apple App Store Server API</strong> — IAP receipt
-  verification.</li>
-  <li><strong>Google AdMob</strong> — ad delivery.</li>
-  <li><strong>Blink (lightning payouts)</strong> — Lightning
-  Network routing for user-initiated redeems.</li>
-  <li><strong>OpenAI / Emergent LLM</strong> — powers the in-app
-  support chat assistant (user messages are passed to the model
-  only for the purpose of generating a reply).</li>
-</ul>
+  <h2>4. Third-party services</h2>
+  <ul>
+    <li><strong>Apple App Store Server API</strong> — IAP receipt
+    verification.</li>
+    <li><strong>Google AdMob</strong> — ad delivery.</li>
+    <li><strong>Blink (lightning payouts)</strong> — Lightning Network
+    routing for user-initiated redeems.</li>
+    <li><strong>OpenAI / Emergent LLM</strong> — powers the in-app
+    support chat assistant (user messages are passed to the model only
+    for the purpose of generating a reply).</li>
+  </ul>
 
-<h2>5. Retention</h2>
-<p>We retain account data while your account is active. Upon
-account-deletion request (see "Your rights" below), we delete the
-account and associated records within 14 days, except where we are
-required by law to retain them.</p>
+  <h2>5. Retention</h2>
+  <p>We retain account data while your account is active. Upon
+  account-deletion request (see "Your rights" below), we delete the
+  account and associated records within 14 days, except where we are
+  required by law to retain them.</p>
 
-<h2>6. Your rights</h2>
-<p>You may request a copy of your data, correction of inaccurate data,
-or full deletion of your account by emailing
-<a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a> from the address
-you registered with.</p>
+  <h2>6. Your rights</h2>
+  <p>You may request a copy of your data, correction of inaccurate
+  data, or full deletion of your account by emailing
+  <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a> from the address
+  you registered with.</p>
 
-<h2>7. Children</h2>
-<p>Hashrate Cloud Miner is not directed at children under 18. We do
-not knowingly collect data from anyone under the age of 18. If you
-believe a minor has provided us with personal data, please contact
-us and we will delete it.</p>
+  <h2>7. Children</h2>
+  <p>Hashrate Cloud Miner is not directed at children under 18. We do
+  not knowingly collect data from anyone under the age of 18. If you
+  believe a minor has provided us with personal data, please contact
+  us and we will delete it.</p>
 
-<h2>8. Security</h2>
-<p>We use industry-standard encryption in transit (TLS) and at rest,
-hashed passwords, signed JWT tokens for session management, and
-Server-Side Verification for AdMob rewards. No system is perfectly
-secure; please use a strong, unique password.</p>
+  <h2>8. Security</h2>
+  <p>We use industry-standard encryption in transit (TLS) and at rest,
+  hashed passwords, signed JWT tokens for session management, and
+  Server-Side Verification for AdMob rewards. No system is perfectly
+  secure; please use a strong, unique password.</p>
 
-<h2>9. Changes</h2>
-<p>We may update this policy from time to time. Material changes will
-be notified through the app or by email.</p>
+  <h2>9. Changes</h2>
+  <p>We may update this policy from time to time. Material changes
+  will be notified through the app or by email.</p>
 
-<h2>10. Contact</h2>
-<p>For privacy questions or to exercise your rights, contact
-<a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>.</p>
+  <h2>10. Contact</h2>
+  <p>For privacy questions or to exercise your rights, contact
+  <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>.</p>
+</div>
+"""
+    return HTMLResponse(_render_page(
+        "Hashrate Cloud Miner — Privacy Policy", body, active_nav="Privacy"))
 
-<footer>
-&copy; {now_utc().year} Hashrate Cloud Miner ·
-<a href="/api/legal/support">Support</a> ·
-<a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>
-</footer>
-</body></html>""")
+
 
 
 # ---------------------------- Routes: Daily check-in (Build #22+) ----------------------------
@@ -2979,27 +3058,150 @@ async def public_privacy_root():
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def public_marketing_root():
-    """Lightweight marketing landing page used as the ASC marketingUrl."""
-    return HTMLResponse(f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hashrate Cloud Miner</title><style>{_PAGE_CSS}</style></head>
-<body>
-<h1>Hashrate Cloud Miner</h1>
-<p>Earn indicative Bitcoin rewards through ad-funded virtual cloud mining.
-Daily check-ins, rewarded ads, and one-time hashrate boosts power your
-mining sessions — all funded by advertising revenue, never deposits or
-guaranteed returns.</p>
-<h2>Get the app</h2>
-<p>Available on the <a href="https://apps.apple.com/app/id6773104756">App Store</a>.</p>
-<h2>Resources</h2>
-<ul>
-<li><a href="/support">Support</a></li>
-<li><a href="/privacy">Privacy Policy</a></li>
-</ul>
-<footer>© {datetime.now(timezone.utc).year} Hashrate Cloud Miner ·
-<a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a></footer>
-</body></html>""")
+    """Branded marketing landing page used as the ASC marketingUrl."""
+    body = """
+<div class="hcm-hero">
+  <h1>Mine Bitcoin from your pocket</h1>
+  <p class="lede">Earn indicative Bitcoin rewards through ad-funded
+  cloud mining. No deposits. No promises. Just hashrate.</p>
+  <a class="hcm-cta" href="https://apps.apple.com/app/id6773104756">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.04c-.03-3.36 2.74-4.97 2.87-5.05-1.56-2.28-4-2.59-4.87-2.63-2.07-.21-4.04 1.22-5.09 1.22-1.07 0-2.66-1.19-4.37-1.16-2.25.03-4.33 1.31-5.49 3.32C-2.16 11.84-.56 17.7 1.74 21.04c1.13 1.63 2.47 3.46 4.23 3.39 1.7-.07 2.34-1.1 4.39-1.1 2.03 0 2.62 1.1 4.41 1.06 1.82-.03 2.97-1.65 4.08-3.29 1.29-1.89 1.82-3.72 1.84-3.82-.04-.02-3.54-1.36-3.57-5.4-.03-3.39 2.76-5.01 2.89-5.09M14.04 2.21c.92-1.12 1.54-2.67 1.37-4.21-1.32.05-2.93.88-3.88 1.99-.85.99-1.6 2.57-1.4 4.08 1.47.12 2.99-.75 3.91-1.86"/></svg>
+    Download on the App Store
+  </a>
+</div>
+
+<div class="hcm-features">
+  <div class="hcm-feat">
+    <div class="icon">⚡</div>
+    <h4>Daily check-ins</h4>
+    <p>Tap once a day to earn a hashrate boost that grows across a 7-day streak.</p>
+  </div>
+  <div class="hcm-feat">
+    <div class="icon">📺</div>
+    <h4>Rewarded ads</h4>
+    <p>Watch short videos to earn up to 12 GH/s per ad — up to 30 ads a day.</p>
+  </div>
+  <div class="hcm-feat">
+    <div class="icon">🔋</div>
+    <h4>Hashpower boosts</h4>
+    <p>One-time IAP boosts from $1.99 add 24h to 30 days of extra hashrate.</p>
+  </div>
+  <div class="hcm-feat">
+    <div class="icon">⚡</div>
+    <h4>Lightning payouts</h4>
+    <p>Redeem to any Lightning wallet — speed.app, zbd, BOLT11 invoices, you name it.</p>
+  </div>
+  <div class="hcm-feat">
+    <div class="icon">📊</div>
+    <h4>Live network data</h4>
+    <p>Indicative earnings track the real Bitcoin network hashrate in real time.</p>
+  </div>
+  <div class="hcm-feat">
+    <div class="icon">🔒</div>
+    <h4>Non-custodial</h4>
+    <p>We never hold your keys, seed phrase, or on-chain assets. Your wallet is yours.</p>
+  </div>
+</div>
+
+<div class="hcm-disclaimer">
+  <strong>Indicative earnings.</strong> Final amounts depend on real
+  Bitcoin network conditions, our payout multiplier, and AdMob
+  revenue. Hashrate Cloud Miner does not custody assets, guarantee
+  profits, or operate as a financial services provider. See the
+  <a href="/privacy">Privacy Policy</a> and
+  <a href="/support">Support</a> page for full details.
+</div>
+"""
+    return HTMLResponse(_render_page(
+        "Hashrate Cloud Miner — Cloud-mine Bitcoin from your pocket",
+        body, active_nav="Home"))
+
+
+@app.get("/icon.png", include_in_schema=False)
+async def public_icon():
+    """Branded app icon served from disk with long cache TTL.
+    Works both locally (./assets/icon.png next to server.py) and inside
+    the Fly Docker container (where WORKDIR is /app and the file is at
+    /app/assets/icon.png — same effective path)."""
+    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.png")
+    return FileResponse(
+        icon_path,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400, immutable"},
+    )
+
+
+# ---------------- Admin: self-hosted uptime monitor APIs ----------------
+# Note: these MUST use @app.* (not @api.*) because they're defined AFTER
+# `app.include_router(api)`. We bake the `/api` prefix in directly so the
+# Kubernetes ingress still routes them.
+@app.get("/api/admin/uptime")
+async def admin_uptime_history(
+    current_admin: Dict[str, Any] = Depends(get_current_admin),
+    hours: int = 24,
+):
+    """Return the last N hours of uptime-check events."""
+    cutoff = now_utc() - timedelta(hours=max(1, min(hours, 168)))
+    cursor = db.uptime_events.find(
+        {"ts": {"$gte": cutoff}},
+        {"_id": 0},
+    ).sort("ts", -1).limit(1000)
+    events: List[Dict[str, Any]] = []
+    async for e in cursor:
+        if isinstance(e.get("ts"), datetime):
+            e["ts"] = e["ts"].isoformat()
+        events.append(e)
+
+    # Per-label rollup: total checks, fails, last-fail timestamp
+    by_label: Dict[str, Dict[str, Any]] = {}
+    for e in events:
+        lbl = e.get("label", "?")
+        bucket = by_label.setdefault(lbl, {
+            "label": lbl, "total": 0, "fails": 0, "last_fail_at": None,
+            "last_ok_at": None,
+        })
+        bucket["total"] += 1
+        if not e.get("ok"):
+            bucket["fails"] += 1
+            if not bucket["last_fail_at"]:
+                bucket["last_fail_at"] = e.get("ts")
+        else:
+            if not bucket["last_ok_at"]:
+                bucket["last_ok_at"] = e.get("ts")
+    for b in by_label.values():
+        b["uptime_pct"] = (
+            round(100.0 * (b["total"] - b["fails"]) / b["total"], 3)
+            if b["total"] else None
+        )
+
+    return {
+        "window_hours": hours,
+        "events_count": len(events),
+        "by_label": list(by_label.values()),
+        "events": events[:200],   # cap response size
+    }
+
+
+@app.post("/api/admin/uptime/test")
+async def admin_uptime_test(
+    current_admin: Dict[str, Any] = Depends(get_current_admin),
+):
+    """Fire a one-off test push notification through ntfy.sh."""
+    from services.uptime_monitor import send_test_notification
+    topic = os.environ.get("NTFY_TOPIC", "")
+    ok = await send_test_notification(topic)
+    return {
+        "ok": ok,
+        "topic_set": bool(topic),
+        "ntfy_subscribe_url": (
+            f"https://ntfy.sh/{topic}" if topic else None
+        ),
+        "note": (
+            "Install the ntfy app (App Store/Play Store), subscribe to "
+            "the topic above, then re-run this endpoint to verify push "
+            "delivery."
+        ),
+    }
 
 
 app.add_middleware(
@@ -3105,12 +3307,18 @@ async def startup():
 
     # Kick off background AI / automation jobs.
     try:
+        from services.uptime_monitor import run_uptime_check as _uptime_tick
+
+        async def _job_uptime():
+            return await _uptime_tick(db)
+
         start_jobs(
             accrue_all_users=_job_accrue_all_users,
             auto_checkin=_job_auto_checkin,
             auto_reinvest=_job_auto_reinvest,
             refresh_agents=_job_refresh_agents,
             auto_ship=auto_ship_tick,
+            uptime_check=_job_uptime,
         )
     except Exception:
         logger.exception("Failed to start background scheduler")
