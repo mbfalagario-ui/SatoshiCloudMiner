@@ -306,27 +306,96 @@ with a._http() as c:
     # ----------------------------------------------------------------
     # IAP STATUS — every 10 SKUs must be APPROVED / READY for review
     # ----------------------------------------------------------------
-    r = c.get(f"/v2/apps/{a.APP_ID}/inAppPurchases", headers=H,
-              params={"limit": 50})
+    r = c.get(f"/v1/apps/{a.APP_ID}/inAppPurchasesV2", headers=H,
+              params={"limit": 50, "include": "inAppPurchaseLocalizations"})
     if r.status_code == 200:
-        iaps = r.json().get("data", [])
+        body_iap = r.json()
+        iaps = body_iap.get("data", [])
+        iap_locs = {x["id"]: x for x in body_iap.get("included", [])
+                    if x.get("type") == "inAppPurchaseLocalizations"}
         add("IAP", "Count", "INFO", f"{len(iaps)} products")
         bad = []
+        # Cross-match with SHOP_PACKAGES from backend
+        try:
+            sys.path.insert(0, "/app/backend")
+            from server import SHOP_PACKAGES as _SP
+            sp_by_id = {p["id"]: p for p in _SP}
+        except Exception:
+            sp_by_id = {}
+
         for p in iaps:
             attrs = p.get("attributes") or {}
             pid = attrs.get("productId")
             state = attrs.get("state")
-            name_iap = attrs.get("name")
-            if "satoshi" in (name_iap or "").lower():
-                bad.append(f"{pid}: name contains 'satoshi' ({name_iap})")
+            # Localized name cross-check
+            rels = (p.get("relationships") or {}).get(
+                "inAppPurchaseLocalizations", {}).get("data") or []
+            asc_name = None
+            for rel in rels:
+                ld = iap_locs.get(rel["id"])
+                if not ld: continue
+                la = ld.get("attributes") or {}
+                if la.get("locale") == "en-US":
+                    asc_name = la.get("name")
+                    break
+            sp_name = (sp_by_id.get(pid) or {}).get("name")
+            if "satoshi" in (asc_name or "").lower():
+                bad.append(f"{pid}: ASC name contains 'satoshi' ({asc_name})")
+            if sp_name and asc_name and sp_name != asc_name:
+                bad.append(f"{pid}: name mismatch (ASC='{asc_name}' vs code='{sp_name}')")
             if state not in {"READY_TO_SUBMIT", "WAITING_FOR_REVIEW",
                              "APPROVED", "IN_REVIEW", "READY_FOR_SALE",
                              "AUTOMATICALLY_APPROVED", "PROCESSING_CONTENT"}:
                 bad.append(f"{pid}: state={state}")
-        check("IAP", "All products clean",
+        check("IAP", "All products clean (name match + valid state)",
               len(bad) == 0,
-              "All IAPs in good state, no 'satoshi' leftovers.",
-              "; ".join(bad))
+              "All IAP names match SHOP_PACKAGES + no 'satoshi' leftovers.",
+              " ; ".join(bad))
+
+    # ----------------------------------------------------------------
+    # URL LIVENESS — every public URL must actually return HTTP 200
+    # ----------------------------------------------------------------
+    import urllib.request
+    import urllib.error
+    public_urls: list[tuple[str, str]] = []
+    # marketingUrl + supportUrl from version localization
+    r = c.get(
+        f"/v1/appStoreVersions/{VERSION_ID}/appStoreVersionLocalizations",
+        headers=H,
+    )
+    for loc in r.json().get("data", []):
+        la = loc.get("attributes") or {}
+        lang = la.get("locale", "?")
+        if la.get("marketingUrl"):
+            public_urls.append((f"{lang} marketingUrl", la["marketingUrl"]))
+        if la.get("supportUrl"):
+            public_urls.append((f"{lang} supportUrl", la["supportUrl"]))
+
+    # privacyPolicyUrl from appInfo localization
+    r = c.get(
+        f"/v1/apps/{a.APP_ID}/appInfos",
+        headers=H,
+        params={"include": "appInfoLocalizations"},
+    )
+    for inc in (r.json().get("included") or []):
+        if inc.get("type") != "appInfoLocalizations": continue
+        la = inc.get("attributes") or {}
+        if la.get("privacyPolicyUrl"):
+            public_urls.append(
+                (f"{la.get('locale','?')} privacyPolicyUrl", la["privacyPolicyUrl"])
+            )
+
+    for label, url in public_urls:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                size = len(resp.read())
+                check("URL Liveness", label,
+                      resp.status == 200 and size > 200,
+                      f"HTTP {resp.status} ({size} bytes)",
+                      f"HTTP {resp.status} or content too small ({size} bytes)")
+        except Exception as e:
+            check("URL Liveness", label, False, "", f"unreachable → {e}")
 
 # ----------------------------------------------------------------
 # REPORT

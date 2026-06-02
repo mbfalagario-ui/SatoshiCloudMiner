@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -1198,6 +1198,208 @@ async def transactions(
         .to_list(limit)
     )
     return {"transactions": items}
+
+
+# ---------------------------- Public Legal Pages (Apple-required) ----------------------------
+# These HTML endpoints satisfy App Store Connect's "Support URL" and
+# "Privacy URL" requirements (Guideline 1.5 / 5.1.1) regardless of any
+# external domain status. They live under /api/* so the same /api ingress
+# rule serves them, and they're plain HTML so they render fine in any
+# browser the App Review team uses.
+_PAGE_CSS = (
+    "body{max-width:780px;margin:32px auto;padding:0 20px;"
+    "font-family:-apple-system,BlinkMacSystemFont,Helvetica Neue,sans-serif;"
+    "color:#1d1d1f;background:#fbfbfd;line-height:1.6}"
+    "h1{font-size:32px;font-weight:800;margin:0 0 4px}"
+    "h2{font-size:20px;margin-top:30px;color:#0a84ff}"
+    "p,li{font-size:15px}"
+    "code{background:#eef;padding:2px 6px;border-radius:4px;font-size:13px}"
+    "footer{margin-top:48px;color:#86868b;font-size:13px;border-top:1px solid #d2d2d7;padding-top:16px}"
+    "a{color:#0a84ff;text-decoration:none}a:hover{text-decoration:underline}"
+)
+
+
+@api.get("/legal/support", response_class=HTMLResponse, include_in_schema=False)
+async def public_support_page():
+    """Public-facing support page — Apple Review Guideline 1.5 compliant."""
+    return HTMLResponse(f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hashrate Cloud Miner — Support</title><style>{_PAGE_CSS}</style></head>
+<body>
+<h1>Hashrate Cloud Miner — Support</h1>
+<p><strong>App Store contact:</strong> {SUPPORT_EMAIL}</p>
+<p>We typically respond to support requests within 48 hours. Premium users
+(any active mining plan or the Ad-Free upgrade) receive priority support.</p>
+
+<h2>In-app support</h2>
+<p>The fastest way to reach us is the in-app <strong>Support</strong> chat
+(Profile → "Still need help? Chat with support"). The chat is staffed by
+our AI assistant grounded in our full FAQ knowledge base; if the AI can't
+answer, your message is routed to our human team.</p>
+
+<h2>Frequently Asked Questions</h2>
+<h3>What is hashrate in this app?</h3>
+<p>Hashrate is virtual computing power expressed in GH/s (gigahash per
+second). Higher hashrate produces higher <em>indicative earnings</em>.
+You earn hashrate from daily check-ins, rewarded ads, and one-time
+hashpower boost purchases.</p>
+
+<h3>How does the daily check-in work?</h3>
+<p>Tap <em>Claim</em> each day to receive a hashrate boost that grows
+across 7 days: Day 1 = 1.2 GH/s, all the way up to Day 7 = 8.0 GH/s.
+Each boost lasts 24 hours. Miss a day and your streak resets to Day 1.</p>
+
+<h3>How do rewarded ads work?</h3>
+<p>Watch short rewarded video ads to earn hashrate boosts. The reward
+scales as you watch more: 1.5 GH/s for the first few, up to 12.0 GH/s
+for later ones. You can watch up to 30 ads per day. Each ad's boost
+lasts 24 hours.</p>
+
+<h3>What are 'indicative earnings'?</h3>
+<p>Your indicative earnings are an estimate based on your virtual
+hashrate's share of the live Bitcoin network. <strong>Hashrate Cloud
+Miner does NOT hold, manage, or custody on-chain assets and is not
+a wallet, trading platform, or fund manager.</strong> Earnings shown
+are illustrative; final amounts depend on real network conditions
+and server records.</p>
+
+<h3>How do I redeem my earnings?</h3>
+<p>Open the <em>Earnings</em> tab → tap <em>Redeem</em> → select
+Lightning → paste your Lightning invoice or address (e.g.
+<code>user@speed.app</code>, <code>user@zbd.gg</code>, or a BOLT11
+invoice starting with <code>lnbc</code>) → enter the amount → confirm.
+Payouts are processed via the Lightning Network. Minimum redeem is
+25,000 sats and maximum is 50,000 sats per request.</p>
+
+<h3>Are there fees on redemption?</h3>
+<p>A small Lightning Network fee is deducted from your balance at redeem
+time to cover routing costs. You will see the exact fee, total
+deduction, and your remaining balance in the confirmation modal before
+you tap Redeem.</p>
+
+<h3>What does the Ad-Free upgrade do?</h3>
+<p>The Ad-Free + Priority Support upgrade removes interstitial banner
+ads and routes your support requests to a faster queue. Rewarded
+video ads (which give you hashrate) remain available — they're opt-in
+only.</p>
+
+<h3>How do I delete my account?</h3>
+<p>Email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a> from the
+address you registered with and we'll permanently delete your account
+and any associated data within 14 days, in line with Apple's App Store
+Review guidelines and applicable data protection laws.</p>
+
+<footer>
+&copy; {now_utc().year} Hashrate Cloud Miner ·
+<a href="/api/legal/privacy">Privacy Policy</a> ·
+<a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>
+</footer>
+</body></html>""")
+
+
+@api.get("/legal/privacy", response_class=HTMLResponse, include_in_schema=False)
+async def public_privacy_page():
+    """Public-facing privacy policy — Apple Review Guideline 5.1.1 compliant."""
+    return HTMLResponse(f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hashrate Cloud Miner — Privacy Policy</title><style>{_PAGE_CSS}</style></head>
+<body>
+<h1>Hashrate Cloud Miner — Privacy Policy</h1>
+<p><strong>Effective date:</strong> June 2026</p>
+
+<p>This privacy policy describes how Hashrate Cloud Miner ("we", "our",
+"the app") collects, uses, and protects information about its users.
+This app is non-custodial — we never hold your private keys, seed
+phrase, or on-chain assets.</p>
+
+<h2>1. Data we collect</h2>
+<ul>
+  <li><strong>Account information:</strong> email address and a password
+  hash (we never store passwords in plain text).</li>
+  <li><strong>Activity data:</strong> daily check-in records, rewarded
+  ad view records, in-app purchase receipts (verified with Apple's
+  App Store Server API), and indicative-earnings ledger entries.</li>
+  <li><strong>Lightning addresses you choose to share</strong> at
+  redeem time. We store them only to fulfill that specific payout
+  request.</li>
+  <li><strong>Aggregated ad metrics</strong> via Google AdMob (per
+  AdMob's privacy policy). The app does not request the IDFA via
+  ATT and does not track users across apps.</li>
+</ul>
+
+<h2>2. Data we do NOT collect</h2>
+<ul>
+  <li>We do not collect, store, or have access to your Lightning
+  wallet's private keys or seed phrase.</li>
+  <li>We do not custody any on-chain Bitcoin or cryptocurrency on
+  your behalf.</li>
+  <li>We do not access your contacts, microphone, camera, photos,
+  or location.</li>
+</ul>
+
+<h2>3. How we use data</h2>
+<ul>
+  <li>To authenticate you and operate the app's features.</li>
+  <li>To compute indicative-earnings ledgers and process Lightning
+  redemptions you initiate.</li>
+  <li>To verify in-app purchases with Apple's App Store Server API.</li>
+  <li>To serve ads via Google AdMob (rewarded video + occasional
+  interstitial).</li>
+  <li>To respond to your support requests.</li>
+</ul>
+
+<h2>4. Third-party services</h2>
+<ul>
+  <li><strong>Apple App Store Server API</strong> — IAP receipt
+  verification.</li>
+  <li><strong>Google AdMob</strong> — ad delivery.</li>
+  <li><strong>Blink (lightning payouts)</strong> — Lightning
+  Network routing for user-initiated redeems.</li>
+  <li><strong>OpenAI / Emergent LLM</strong> — powers the in-app
+  support chat assistant (user messages are passed to the model
+  only for the purpose of generating a reply).</li>
+</ul>
+
+<h2>5. Retention</h2>
+<p>We retain account data while your account is active. Upon
+account-deletion request (see "Your rights" below), we delete the
+account and associated records within 14 days, except where we are
+required by law to retain them.</p>
+
+<h2>6. Your rights</h2>
+<p>You may request a copy of your data, correction of inaccurate data,
+or full deletion of your account by emailing
+<a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a> from the address
+you registered with.</p>
+
+<h2>7. Children</h2>
+<p>Hashrate Cloud Miner is not directed at children under 18. We do
+not knowingly collect data from anyone under the age of 18. If you
+believe a minor has provided us with personal data, please contact
+us and we will delete it.</p>
+
+<h2>8. Security</h2>
+<p>We use industry-standard encryption in transit (TLS) and at rest,
+hashed passwords, signed JWT tokens for session management, and
+Server-Side Verification for AdMob rewards. No system is perfectly
+secure; please use a strong, unique password.</p>
+
+<h2>9. Changes</h2>
+<p>We may update this policy from time to time. Material changes will
+be notified through the app or by email.</p>
+
+<h2>10. Contact</h2>
+<p>For privacy questions or to exercise your rights, contact
+<a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>.</p>
+
+<footer>
+&copy; {now_utc().year} Hashrate Cloud Miner ·
+<a href="/api/legal/support">Support</a> ·
+<a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>
+</footer>
+</body></html>""")
 
 
 # ---------------------------- Routes: Daily check-in (Build #22+) ----------------------------
