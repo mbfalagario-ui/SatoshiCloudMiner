@@ -39,7 +39,7 @@ const CREATIVES = [
   },
   {
     id: 'colossus',
-    headline: 'Flagship: Colossus Farm',
+    headline: 'Flagship: Colossus Rig',
     sub: '1900 TH/s, 365 days. Maximum hashpower yield.',
     cta: 'Explore',
     accent: '#A78BFA',
@@ -48,7 +48,7 @@ const CREATIVES = [
   },
   {
     id: 'mega',
-    headline: 'Industrial scale: Mega Farm',
+    headline: 'Industrial scale: Mega Rig',
     sub: '380 TH/s for 90 days. Pro tier returns.',
     cta: 'See details',
     accent: '#FBBF24',

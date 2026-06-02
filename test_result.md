@@ -3025,3 +3025,58 @@ agent_communication:
              support, dashboard, admin).
         DO NOT test the frontend unless I ask — the user wants the
         backend regression first before we trigger EAS Build #18.
+
+agent_communication:
+    - agent: "main"
+      message: |
+        2026-06-02 SESSION — Post-resubmission audit & home-screen redesign:
+
+        1. APPLE RESUBMISSION VERIFIED ALREADY DONE
+           - Submission 309a8a0d-5fa1-4c5b… is WAITING_FOR_REVIEW since
+             2026-06-02 00:49:29 UTC.
+           - Review notes patched with full Round-2 reply (Guidelines
+             3 / 2.1(a) / 1.5).
+           - All 10 IAP en-US localized display names sync verified
+             (Newcomer Boost / Daily Booster / Pro Rig / Elite Rig /
+             Ultra Rig / Mega Rig / Giga Rig / Titan Rig / Colossus Rig /
+             Ad-Free + Priority Support).
+           - /api/legal/support and /api/legal/privacy return HTTP 200
+             with ~6KB HTML each.
+           - All 3 reviewer accounts (appreview1/2/3 @ hashratecloudminer.app
+             with password AppReview2026!) authenticate successfully.
+
+        2. STALE-COPY FIXES (4 items, all in JS bundle for NEXT build only):
+           - /app/frontend/src/components/AdInterstitial.tsx:
+             "Colossus Farm" → "Colossus Rig"
+             "Mega Farm"     → "Mega Rig"
+           - /app/frontend/app/sign-up.tsx:
+             "Sign up and claim a free Welcome Miner." →
+             "Start mining with a free Newcomer Boost."
+           - /app/frontend/app/redeem/confirm.tsx:
+             Removed dead-DNS email (support@hashratecloudminer.com),
+             now directs users to the in-app Support screen.
+
+        3. HOME SCREEN REDESIGN — /app/frontend/app/(tabs)/index.tsx
+           Per user spec (Message #334):
+             - Merged "Indicative Earnings" + "Active Hashrate" into one
+               unified hero card.
+             - Massive live-ticking SATS counter (42px, decimals=2) as the
+               hero metric.
+             - Demoted 8-decimal BTC + USD to a slim secondary line.
+             - Status pill (MINING/IDLE) replaces the standalone mining card.
+             - Embedded 3-cell hashrate panel (Plans / Check-in / Ads)
+               with ACTIVE HASHPOWER label inside the same card.
+             - Big "Boost in Store →" CTA at the bottom of the hero card.
+             - REMOVED: separate Active Hashrate card, separate rig-image
+               Mining Active card, "Daily est." row, "Redeem Tap ›" row.
+             - DailyCheckinCard + WatchAdCard + Ticker + Disclaimer
+               preserved unchanged.
+           Visual verified via web screenshot at 390x844 (logged in as
+           appreview1) — layout matches spec exactly.
+
+        4. NO EAS BUILD TRIGGERED. All 5 changes only ship in a future
+           binary. The current Apple submission (Build #23) is UNAFFECTED
+           and remains WAITING_FOR_REVIEW.
+
+        5. NO BACKEND CHANGES. No testing needed.
+

@@ -75,7 +75,7 @@ export default function RedeemConfirm() {
           <Bullet text="Processing: instant via Lightning Network." />
           <Bullet text="Cooldown: only one redeem per 24 hours." />
           <Bullet text="Security: never share your private keys or seed phrase with anyone." />
-          <Bullet text="Support: contact support@hashratecloudminer.com from your registered email." />
+          <Bullet text="Support: open the Support screen in the app and submit a ticket from your registered account." />
         </View>
       </ScrollView>
 
