@@ -725,6 +725,61 @@ async def me(current_user: Dict[str, Any] = Depends(get_current_user)):
     return serialize_user_public(user)
 
 
+@api.delete("/auth/me")
+async def delete_account(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Permanently delete the signed-in user's account and ALL associated
+    data. Apple App Review Guideline 5.1.1(v) requires an in-app deletion
+    flow that completes without external steps (no email/phone required).
+
+    Hard-deletes the user document and every collection that references the
+    user_id. We intentionally do not keep any soft-delete row — the user
+    explicitly asked for erasure.
+    """
+    uid = current_user["id"]
+    email = current_user.get("email", "")
+    logger.warning("ACCOUNT DELETION requested by user=%s email=%s", uid, email)
+
+    # Collections that store user-scoped data. Best-effort delete each.
+    collections = [
+        "machines",
+        "transactions",
+        "withdrawals",
+        "earnings_logs",
+        "daily_checkins",
+        "ad_views",
+        "support_threads",
+        "support_messages",
+        "iap_receipts",
+        "referrals",
+        "sessions",
+        "push_tokens",
+        "auto_settings",
+    ]
+    results: Dict[str, int] = {}
+    for cname in collections:
+        try:
+            r = await db[cname].delete_many({"user_id": uid})
+            results[cname] = r.deleted_count
+        except Exception as e:
+            logger.warning("delete from %s failed: %s", cname, e)
+            results[cname] = -1
+
+    # Finally drop the user record itself.
+    try:
+        u = await db.users.delete_one({"id": uid})
+        results["users"] = u.deleted_count
+    except Exception as e:
+        logger.error("user doc delete failed: %s", e)
+        raise HTTPException(status_code=500, detail="Account deletion failed. Please contact support.")
+
+    logger.warning("ACCOUNT DELETED user=%s results=%s", uid, results)
+    return {
+        "ok": True,
+        "message": "Your account and all associated data have been permanently deleted.",
+        "deleted": results,
+    }
+
+
 # ---------------------------- Routes: Dashboard ----------------------------
 @api.get("/dashboard")
 async def dashboard(current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -1364,10 +1419,12 @@ async def public_support_page():
   only.</p>
 
   <h3>How do I delete my account?</h3>
-  <p>Email <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a> from the
-  address you registered with and we'll permanently delete your account
-  and any associated data within 14 days, in line with Apple's App Store
-  Review guidelines and applicable data protection laws.</p>
+  <p>From inside the iOS app, open the <strong>Profile</strong> tab and
+  tap the <strong>Delete account</strong> button at the bottom of the
+  screen. Deletion is immediate and permanent — your account and all
+  associated data are erased from our servers. No email or external
+  steps required. If you have any questions you can still reach us at
+  <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>.</p>
 
   <div class="hcm-disclaimer">
     Earnings are <strong>indicative</strong> and depend on real Bitcoin
@@ -2851,7 +2908,7 @@ SEEDED_FAQS: List[Dict[str, Any]] = [
     {"id": "faq_premium_support", "q": "How do I get priority support?",
      "a": "Premium users (anyone with an active paid mining plan) automatically get priority support — your messages are tagged for the admin's attention and SLA is 48 hours. Free users get instant AI-powered chat responses; admins also monitor that queue."},
     {"id": "faq_account_delete", "q": "How do I delete my account?",
-     "a": "Email support@hashratecloudminer.com from the address you registered with and we'll permanently delete your account and any associated data within 14 days, in line with Apple's App Store Review guidelines and applicable data protection laws."},
+     "a": "Open the Profile tab and tap the red 'Delete account' button at the bottom of the screen. The deletion is immediate, permanent, and erases your account along with all associated data from our servers. No email or external steps are required. You can also email support@hashratecloudminer.com if you need help with the process."},
 ]
 
 

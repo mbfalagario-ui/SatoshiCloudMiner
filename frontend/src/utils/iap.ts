@@ -211,21 +211,24 @@ export async function buyProduct(productId: string): Promise<IapBuyResult> {
     );
   }
 
-  // v15 contract: products MUST be in the StoreKit cache. If we haven't seen
-  // this SKU yet, fetch it now (Apple's TestFlight crash mode was caused by
-  // skipping this step on first tap).
+  // v15 contract: products MUST be in the StoreKit cache. Try to warm it
+  // first, but if fetchProducts returns empty (which can happen in sandbox
+  // while the IAP is still in WAITING_FOR_REVIEW), DO NOT short-circuit —
+  // let requestPurchase be called. StoreKit will either show its sheet
+  // (sandbox resolves the SKU on demand) or raise a real error through
+  // purchaseErrorListener with the actual Apple message.
   if (!_fetchedSkus.has(productId)) {
-    const products = await fetchProducts([productId]);
-    if (!products.length) {
-      // Friendlier message when the App Store hasn't propagated this SKU yet.
-      // This happens BEFORE the IAP is reviewed-and-approved (the standard
-      // first-launch case for a brand new App Store version), and a few
-      // minutes after a fresh IAP is added.
-      const err: any = new Error(
-        `This plan is being reviewed by Apple and will be available shortly. (SKU: ${productId})\n\nTap a different plan, or pull to refresh in a few minutes.`,
-      );
-      err.code = 'E_PRODUCT_NOT_AVAILABLE';
-      throw err;
+    try {
+      const products = await fetchProducts([productId]);
+      if (products.length === 0) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[IAP] fetchProducts returned empty for ${productId} — proceeding to requestPurchase anyway. StoreKit may resolve the SKU on demand or raise a precise error.`,
+        );
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[IAP] fetchProducts threw, continuing:', e);
     }
   }
 

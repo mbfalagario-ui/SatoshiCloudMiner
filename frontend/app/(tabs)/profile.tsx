@@ -103,6 +103,40 @@ export default function Profile() {
     }, 'Sign out');
   };
 
+  // Apple Guideline 5.1.1(v): users must be able to permanently delete
+  // their account from within the app — no email, no phone, no extra
+  // steps. Confirm twice (because this is irreversible) then call the
+  // backend DELETE /api/auth/me, then sign out.
+  const onDeleteAccount = () => {
+    confirmDialog(
+      'Delete account?',
+      'This permanently erases your account, balance, miners, transactions, and all data. This cannot be undone.',
+      () => {
+        confirmDialog(
+          'Are you sure?',
+          'Type "delete" mentally — there is no recovery. Your sats balance will be forfeited.',
+          async () => {
+            try {
+              await api('/auth/me', { method: 'DELETE' });
+              notify(
+                'Account deleted',
+                'Your account and all data have been permanently deleted.',
+              );
+              await signOut();
+            } catch (e: any) {
+              notify(
+                'Deletion failed',
+                e?.message ?? 'Please try again or contact support if this persists.',
+              );
+            }
+          },
+          'Delete forever',
+        );
+      },
+      'Continue',
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -250,6 +284,21 @@ export default function Profile() {
           <Text style={styles.logoutText}>Sign out</Text>
         </TouchableOpacity>
 
+        {/* Apple 5.1.1(v): in-app permanent account deletion. */}
+        <TouchableOpacity
+          testID="profile-delete-account-btn"
+          style={styles.deleteAccountBtn}
+          activeOpacity={0.8}
+          onPress={onDeleteAccount}
+        >
+          <Ionicons name="trash-outline" size={18} color={colors.danger} />
+          <Text style={styles.deleteAccountText}>Delete account</Text>
+        </TouchableOpacity>
+        <Text style={styles.deleteAccountHint}>
+          Permanently erases your account and all associated data from our servers.
+          Action is immediate and cannot be undone.
+        </Text>
+
         <Text style={styles.appVersion}>Hashrate Cloud Miner v1.0.1 (23)</Text>
         <Text style={styles.disclaimer}>
           Hashrate Cloud Miner is a cloud computing simulation and monitoring tool. It is not a financial,
@@ -361,6 +410,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logoutText: { color: colors.danger, fontSize: 14, fontWeight: '700' },
+  deleteAccountBtn: {
+    flexDirection: 'row',
+    backgroundColor: 'transparent',
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  deleteAccountText: { color: colors.danger, fontSize: 13, fontWeight: '700' },
+  deleteAccountHint: {
+    color: colors.textTertiary,
+    fontSize: 10,
+    lineHeight: 14,
+    textAlign: 'center',
+    marginTop: 6,
+    paddingHorizontal: spacing.md,
+  },
   faqWrap: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
