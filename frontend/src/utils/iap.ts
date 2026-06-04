@@ -202,7 +202,14 @@ const PURCHASE_TIMEOUT_MS = 180_000; // 3 minutes — Apple sheet stays open lon
 
 export async function buyProduct(productId: string): Promise<IapBuyResult> {
   const iap = loadModule();
-  if (!iap) return { applePurchase: false, productId };
+  if (!iap) {
+    // CRITICAL: don't return success when the module isn't available — that
+    // would let the caller silently grant the IAP without StoreKit. This was
+    // the root cause of Apple Rejections #4–#6 ("no payment sheet triggered").
+    throw new Error(
+      'Apple In-App Purchase is unavailable on this device. Please ensure you are on iOS, signed in to the App Store, and try again.',
+    );
+  }
 
   const ok = await initIap();
   if (!ok) {

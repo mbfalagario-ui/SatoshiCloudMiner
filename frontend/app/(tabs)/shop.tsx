@@ -11,6 +11,7 @@ import { api } from '@/src/utils/api';
 import { useSession } from '@/src/ctx';
 import { colors, radius, spacing, fonts, fmtUsd, fmtGhs } from '@/src/utils/theme';
 import CrossSellBanner from '@/src/components/CrossSellBanner';
+import { buyProduct, isIapAvailable } from '@/src/utils/iap';
 
 type Pkg = {
   id: string;
@@ -81,9 +82,38 @@ export default function Store() {
     if (busy) return;
     setBusy(true);
     try {
+      // ───────────────────────────────────────────────────────────
+      // Apple Guideline 2.1(b): all paid digital content MUST go
+      // through StoreKit. On iOS we ALWAYS open the native sheet
+      // first and only call the backend with the resulting
+      // transactionId. The backend rejects /packages/buy on iOS
+      // unless apple_transaction_id is present.
+      // ───────────────────────────────────────────────────────────
+      let appleTransactionId: string | undefined;
+      if (Platform.OS === 'ios') {
+        if (!isIapAvailable()) {
+          Alert.alert(
+            'In-App Purchases unavailable',
+            'Apple In-App Purchases are not available on this device. Please ensure you are signed in to the App Store and try again.',
+          );
+          return;
+        }
+        const result = await buyProduct(pkg.id);
+        if (!result.applePurchase || !result.transactionId) {
+          // StoreKit closed without a successful purchase (user
+          // cancelled, network error, payment declined). Do NOT
+          // call the backend.
+          return;
+        }
+        appleTransactionId = result.transactionId;
+      }
+
       const r = await api('/packages/buy', {
         method: 'POST',
-        body: JSON.stringify({ package_id: pkg.id }),
+        body: JSON.stringify({
+          package_id: pkg.id,
+          apple_transaction_id: appleTransactionId,
+        }),
       });
       const bonusMsg = r.first_purchase_bonus_applied
         ? `\n\nFirst-time bonus +${r.bonus_pct}% applied (+${r.bonus_ghs?.toFixed?.(1)} GH/s)`
@@ -92,7 +122,15 @@ export default function Store() {
       await load();
       await refresh();
     } catch (e: any) {
-      Alert.alert('Purchase failed', e?.message || 'Try again later');
+      const msg = e?.message || 'Try again later';
+      // Don't show the alert if the user cancelled the StoreKit sheet
+      const isCancellation =
+        /cancel/i.test(msg) ||
+        /E_USER_CANCELLED/i.test(msg) ||
+        /SKErrorPaymentCancelled/i.test(msg);
+      if (!isCancellation) {
+        Alert.alert('Purchase failed', msg);
+      }
     } finally {
       setBusy(false);
     }

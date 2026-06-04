@@ -4,7 +4,7 @@ via `eas submit`, then resubmit v1.0.2 review in ASC.
 """
 import os, subprocess, time, sys, re
 
-BUILD_ID = "c17bd13a-0a9e-42f9-ad32-74c76f4b88d6"
+BUILD_ID = "57bf0a75-1188-433a-8ee6-c42a59e4a4ba"
 ENV = os.environ.copy()
 ENV["EXPO_TOKEN"] = "0qV7z8s8sP5Ql53GhFcv-S_swRWl_nSTvDTymDxA"
 

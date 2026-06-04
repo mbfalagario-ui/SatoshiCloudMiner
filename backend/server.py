@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Request
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Request, Header
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
@@ -832,6 +832,8 @@ async def get_packages():
 async def buy_package(
     payload: BuyPackageRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
+    user_agent: Optional[str] = Header(None, alias="User-Agent"),
+    x_client_platform: Optional[str] = Header(None, alias="X-Client-Platform"),
 ):
     pkg = next((p for p in SHOP_PACKAGES if p["id"] == payload.package_id), None)
     if not pkg:
@@ -839,6 +841,40 @@ async def buy_package(
 
     await accrue_earnings(current_user["id"])
     now = now_utc()
+
+    # ------------------------------------------------------------------
+    # GUIDELINE 2.1(b) ENFORCEMENT — server-side StoreKit gate
+    # If the request originates from an iOS device, an Apple
+    # transactionId is REQUIRED. We refuse to grant the package
+    # otherwise — this prevents a buggy frontend from bypassing
+    # StoreKit and silently granting purchases for free (which is
+    # exactly the failure pattern Apple flagged on Build #24/#25).
+    # Heuristic: User-Agent contains "iPhone"/"iPad"/"iOS", OR the
+    # client explicitly sets X-Client-Platform: ios.
+    # ------------------------------------------------------------------
+    ua = (user_agent or "").lower()
+    is_ios_client = (
+        (x_client_platform or "").lower() == "ios"
+        or "iphone" in ua
+        or "ipad" in ua
+        or "ios" in ua
+        or "darwin" in ua
+        or "cfnetwork" in ua  # native iOS URL session
+    )
+    if is_ios_client and not payload.apple_transaction_id:
+        logger.warning(
+            "REFUSED iOS buy without StoreKit transactionId: user=%s pkg=%s ua=%s",
+            current_user.get("id"), payload.package_id, user_agent,
+        )
+        raise HTTPException(
+            status_code=402,
+            detail=(
+                "Apple In-App Purchase required. The native StoreKit payment "
+                "sheet must complete successfully before the package can be "
+                "granted. If the sheet did not appear, please ensure you are "
+                "signed in to the App Store and try again."
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Apple IAP receipt validation

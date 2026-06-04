@@ -21,6 +21,8 @@ export async function clearToken() {
   await storage.secureRemove(TOKEN_KEY);
 }
 
+import { Platform } from 'react-native';
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -36,6 +38,9 @@ export async function api(
   const { auth = true, headers, ...rest } = opts;
   const finalHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
+    // Backend uses this to enforce StoreKit on iOS clients (refuses
+    // /packages/buy without an apple_transaction_id). DO NOT REMOVE.
+    'X-Client-Platform': Platform.OS,
     ...(headers as Record<string, string> | undefined),
   };
   if (auth) {
