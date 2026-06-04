@@ -171,7 +171,7 @@ export default function Store() {
         <View style={styles.disclaimer}>
           <Ionicons name="shield-checkmark" size={14} color={colors.textTertiary} />
           <Text style={styles.disclaimerText}>
-            Plans grant virtual computing power for the listed duration. Earnings are indicative based on live network hashrate. This app does not hold, manage, or custody on-chain assets.
+            Boost packs are one-time purchases that permanently increase your virtual hashpower credit. Earnings are indicative based on live network hashrate and operator settings. This app does not hold, manage, or custody on-chain assets. Withdrawals route to a Lightning address you control.
           </Text>
         </View>
         <View style={{ height: 100 }} />
@@ -206,7 +206,9 @@ function PlanCard({ pkg, alreadyBonusUsed, onBuy, busy }: { pkg: Pkg; alreadyBon
           ) : null}
         </View>
       </View>
-      <Text style={styles.durationMeta}>Active for {pkg.duration_label}</Text>
+      <Text style={styles.durationMeta}>
+        {pkg.duration_label === 'permanent' ? 'Permanent hashpower credit' : `Active for ${pkg.duration_label}`}
+      </Text>
       <TouchableOpacity
         disabled={busy}
         onPress={onBuy}

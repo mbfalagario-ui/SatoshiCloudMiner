@@ -83,14 +83,19 @@ CHECKIN_BOOST_DURATION_HOURS = 24
 # ----------------------------------------------------------------------
 # Rewarded Ad ladder — GH/s reward per ad position in today's stack.
 # Each ad's boost lasts 24h. Counter resets at 1:00 AM UTC.
+#
+# v1.0.2 / Build #25 rebalance: IAP boost packs are now PERMANENT
+# credits (no 30-day window) to align with Apple Guideline 3.1.2(b)
+# Consumable semantics. Ad rewards reduced ~3× to maintain the IAP→ad
+# value gap and the overall unit economics.
 # ----------------------------------------------------------------------
 AD_REWARD_LADDER_GHS = [
-    1.5, 1.5, 1.5, 1.5, 1.5,        # ads 1-5
-    3.0, 3.0, 3.0, 3.0, 3.0,        # ads 6-10
-    5.0, 5.0, 5.0, 5.0, 5.0,        # ads 11-15
-    7.0, 7.0, 7.0, 7.0, 7.0,        # ads 16-20
-    9.5, 9.5, 9.5, 9.5, 9.5,        # ads 21-25
-    12.0, 12.0, 12.0, 12.0, 12.0,   # ads 26-30
+    0.5, 0.5, 0.5, 0.5, 0.5,        # ads 1-5
+    1.0, 1.0, 1.0, 1.0, 1.0,        # ads 6-10
+    1.5, 1.5, 1.5, 1.5, 1.5,        # ads 11-15
+    2.0, 2.0, 2.0, 2.0, 2.0,        # ads 16-20
+    3.0, 3.0, 3.0, 3.0, 3.0,        # ads 21-25
+    4.0, 4.0, 4.0, 4.0, 4.0,        # ads 26-30
 ]
 AD_BOOST_DURATION_HOURS = 24
 
@@ -114,7 +119,7 @@ SHOP_PACKAGES = [
         "price_usd": 1.99,
         "original_price_usd": 2.65,
         "hashrate_boost_ghs": 50,
-        "duration_hours": 720,
+        "duration_hours": 0,  # permanent (Apple 3.1.2(b) Consumable)
         "badge": "NEW",
         "first_purchase_bonus_pct": 15,
         "ai_optimized": False,
@@ -122,12 +127,12 @@ SHOP_PACKAGES = [
     {
         "id": "rookie_299",
         "name": "Daily Booster",
-        "tagline": "30-day power-up",
+        "tagline": "Permanent +100 GH/s",
         "offer_text": None,
         "price_usd": 2.99,
         "original_price_usd": 3.99,
         "hashrate_boost_ghs": 100,
-        "duration_hours": 720,
+        "duration_hours": 0,
         "badge": None,
         "first_purchase_bonus_pct": 19,
         "ai_optimized": False,
@@ -140,7 +145,7 @@ SHOP_PACKAGES = [
         "price_usd": 4.99,
         "original_price_usd": 6.65,
         "hashrate_boost_ghs": 230,
-        "duration_hours": 720,
+        "duration_hours": 0,
         "badge": "POPULAR",
         "first_purchase_bonus_pct": 24,
         "ai_optimized": True,
@@ -153,7 +158,7 @@ SHOP_PACKAGES = [
         "price_usd": 9.99,
         "original_price_usd": 13.32,
         "hashrate_boost_ghs": 500,
-        "duration_hours": 720,
+        "duration_hours": 0,
         "badge": None,
         "first_purchase_bonus_pct": 28,
         "ai_optimized": True,
@@ -166,7 +171,7 @@ SHOP_PACKAGES = [
         "price_usd": 19.99,
         "original_price_usd": 26.65,
         "hashrate_boost_ghs": 1100,
-        "duration_hours": 720,
+        "duration_hours": 0,
         "badge": "VALUE",
         "first_purchase_bonus_pct": 33,
         "ai_optimized": True,
@@ -179,7 +184,7 @@ SHOP_PACKAGES = [
         "price_usd": 49.99,
         "original_price_usd": 66.65,
         "hashrate_boost_ghs": 2300,
-        "duration_hours": 720,
+        "duration_hours": 0,
         "badge": "PRO",
         "first_purchase_bonus_pct": 37,
         "ai_optimized": True,
@@ -192,7 +197,7 @@ SHOP_PACKAGES = [
         "price_usd": 99.99,
         "original_price_usd": 133.32,
         "hashrate_boost_ghs": 3500,
-        "duration_hours": 720,
+        "duration_hours": 0,
         "badge": None,
         "first_purchase_bonus_pct": 42,
         "ai_optimized": True,
@@ -205,7 +210,7 @@ SHOP_PACKAGES = [
         "price_usd": 149.99,
         "original_price_usd": 199.99,
         "hashrate_boost_ghs": 4700,
-        "duration_hours": 720,
+        "duration_hours": 0,
         "badge": "BOGO",
         "first_purchase_bonus_pct": 46,
         "ai_optimized": True,
@@ -218,7 +223,7 @@ SHOP_PACKAGES = [
         "price_usd": 199.99,
         "original_price_usd": 266.65,
         "hashrate_boost_ghs": 7500,
-        "duration_hours": 720,
+        "duration_hours": 0,
         "badge": "FLAGSHIP",
         "first_purchase_bonus_pct": 50,
         "ai_optimized": True,
@@ -907,7 +912,16 @@ async def buy_package(
 
     def _make_machine(suffix: str = "", bonus_ghs: float = 0.0) -> Dict[str, Any]:
         boost_ghs = pkg.get("hashrate_boost_ghs", 0) + bonus_ghs
-        duration_h = pkg.get("duration_hours", 720)
+        duration_h = pkg.get("duration_hours", 0)
+        # v1.0.2 / Build #25: IAP boost packs are PERMANENT (one-time
+        # CONSUMABLE per Apple 3.1.2(b)). duration_h=0 means no expiry —
+        # the hashpower credit is permanently added to the user. Legacy
+        # packs with duration_h>0 continue to use a time-bounded boost.
+        expires_iso = (
+            (now + timedelta(hours=duration_h)).isoformat()
+            if duration_h and duration_h > 0
+            else None
+        )
         return {
             "id": str(uuid.uuid4()),
             "user_id": current_user["id"],
@@ -917,7 +931,7 @@ async def buy_package(
             "hash_rate": boost_ghs,  # backward-compat
             "duration_hours": duration_h,
             "purchased_at": now.isoformat(),
-            "expires_at": (now + timedelta(hours=duration_h)).isoformat(),
+            "expires_at": expires_iso,
             "status": "active",
         }
 
@@ -2878,7 +2892,7 @@ SEEDED_FAQS: List[Dict[str, Any]] = [
     {"id": "faq_daily_checkin", "q": "How does the daily check-in work?",
      "a": "Tap Claim each day to receive a hashrate boost that grows across 7 days: Day 1 = 1.2 GH/s, all the way up to Day 7 = 8.0 GH/s. Each boost lasts 24 hours. Miss a day and your streak resets to Day 1."},
     {"id": "faq_rewarded_ads", "q": "How do rewarded ads work?",
-     "a": "Watch short rewarded video ads to earn hashrate boosts. The reward scales as you watch more: 1.5 GH/s for the first few, up to 12.0 GH/s for later ones. You can watch up to 30 ads per day. Each ad's boost lasts 24 hours."},
+     "a": "Watch short rewarded video ads to earn small temporary hashrate boosts. The reward scales as you watch more: 0.5 GH/s for the first few, up to 4.0 GH/s for later ones. You can watch up to 30 ads per day. Each ad's boost lasts 24 hours. Ad boosts are designed to be a minor, time-limited supplement — for permanent hashpower, see the in-app shop."},
     {"id": "faq_indicative_earnings", "q": "What are 'indicative earnings'?",
      "a": "Your indicative earnings are an estimate based on your virtual hashrate's share of the live Bitcoin network. Hashrate Cloud Miner does NOT hold or manage your assets and is not a wallet, trading platform, or fund manager. Earnings shown are illustrative and final amounts depend on server records."},
     {"id": "faq_how_to_redeem", "q": "How do I redeem my earnings?",
@@ -3141,7 +3155,7 @@ async def public_marketing_root():
   <div class="hcm-feat">
     <div class="icon">🔋</div>
     <h4>Hashpower boosts</h4>
-    <p>One-time IAP boosts from $1.99 add 24h to 30 days of extra hashrate.</p>
+    <p>One-time IAP boosts from $1.99 permanently increase your cloud hashpower.</p>
   </div>
   <div class="hcm-feat">
     <div class="icon">⚡</div>
@@ -3478,7 +3492,7 @@ async def _job_auto_reinvest():
                 continue
             cost_btc = usd_to_btc(target["price_usd"])
             now = now_utc()
-            duration_h = target.get("duration_hours", 720)
+            duration_h = target.get("duration_hours", 0)
             boost_ghs = target.get("hashrate_boost_ghs", 0)
             machine = {
                 "id": str(uuid.uuid4()),
@@ -3489,7 +3503,10 @@ async def _job_auto_reinvest():
                 "hash_rate": boost_ghs,
                 "duration_hours": duration_h,
                 "purchased_at": now.isoformat(),
-                "expires_at": (now + timedelta(hours=duration_h)).isoformat(),
+                "expires_at": (
+                    (now + timedelta(hours=duration_h)).isoformat()
+                    if duration_h and duration_h > 0 else None
+                ),
                 "status": "active",
                 "auto_purchased": True,
             }

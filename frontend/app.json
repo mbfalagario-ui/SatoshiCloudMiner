@@ -11,9 +11,9 @@
     "description": "Hashrate Cloud Miner \u2014 Bitcoin cloud-mining performance dashboard with AI yield agents and Lightning payouts.",
     "primaryColor": "#00FFA3",
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "app.satoshicloudminer",
-      "buildNumber": "23",
+      "buildNumber": "25",
       "config": {
         "usesNonExemptEncryption": false
       },

@@ -31,7 +31,7 @@ const CREATIVES = [
   {
     id: 'pro-rig',
     headline: 'Most popular: Pro Rig',
-    sub: 'AI-optimized cluster. 30 days of high-yield mining.',
+    sub: 'AI-optimized cluster. Permanent hashpower credit.',
     cta: 'View plan',
     accent: '#00FFA3',
     iconName: 'flash' as const,
