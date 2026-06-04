@@ -39,7 +39,7 @@ def main() -> int:
         ej.get("version") == "1.0.2",
         f"version={ej.get('version')}")
     chk("app.json/buildNumber",
-        ej["ios"].get("buildNumber") == "25",
+        ej["ios"].get("buildNumber") == "27",
         f"buildNumber={ej['ios'].get('buildNumber')}")
     chk("2.4.1 iPad supportsTablet",
         ej["ios"].get("supportsTablet") is True,
@@ -124,7 +124,7 @@ def main() -> int:
             chk("2.1 reviewer notes ≥ 1500 chars (deep context)",
                 len(notes) >= 1500,
                 f"notes len={len(notes)}")
-            for q in ("mining", "wallet", "lightning", "delete account", "iap", "build #25", "ipad"):
+            for q in ("mining", "wallet", "lightning", "delete account", "iap", "build #27", "ipad"):
                 chk(f"reviewer notes mentions '{q}'",
                     q.lower() in notes.lower(),
                     f"present: {q.lower() in notes.lower()}")
@@ -212,6 +212,66 @@ def main() -> int:
             code = -1
         chk("5.1.1(v) DELETE /api/auth/me reachable (401 unauth ok)",
             code == 401, f"code={code}")
+
+        # 3.1.1 RESTORE PURCHASES — endpoint must exist + return 401 unauth
+        try:
+            req = urllib.request.Request(
+                "https://api.hashratecloudminer.com/api/iap/restore",
+                method="POST",
+                data=b'{"purchases":[]}',
+                headers={"User-Agent": "preflight",
+                         "Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(req, timeout=10)
+            code = 200
+        except urllib.error.HTTPError as e:
+            code = e.code
+        except Exception:
+            code = -1
+        chk("3.1.1 POST /api/iap/restore reachable (401 unauth ok)",
+            code == 401, f"code={code}")
+
+        # Confirm Restore button exists in Shop UI
+        shop_src = pathlib.Path("/app/frontend/app/(tabs)/shop.tsx").read_text()
+        chk("3.1.1 Shop screen has Restore button (testID)",
+            "restore-purchases-btn" in shop_src,
+            "")
+        chk("3.1.1 Shop wired to restorePurchases()",
+            "restorePurchases" in shop_src and "/iap/restore" in shop_src,
+            "")
+        # Confirm iap.ts exports restorePurchases
+        iap_src = pathlib.Path("/app/frontend/src/utils/iap.ts").read_text()
+        chk("3.1.1 iap.ts exports restorePurchases()",
+            "export async function restorePurchases" in iap_src,
+            "")
+        chk("3.1.1 iap.ts no silent-success on missing module",
+            "throw new Error(\n      'Apple In-App Purchase is unavailable" in iap_src,
+            "")
+        # 3.1.1 backend guarantees idempotency
+        srv_src = pathlib.Path("/app/backend/server.py").read_text()
+        chk("3.1.1 backend /iap/restore handler present",
+            "@api.post(\"/iap/restore\")" in srv_src,
+            "")
+        chk("3.1.1 backend StoreKit gate (402 on iOS w/o tx)",
+            "Apple In-App Purchase required" in srv_src
+            and "is_ios_client" in srv_src,
+            "")
+        # Reviewer notes contains correct name
+        try:
+            r = c.get(f"/v1/appStoreVersions/{VERSION_ID}/appStoreReviewDetail",
+                      headers=a._headers())
+            notes2 = r.json()["data"]["attributes"].get("notes", "") or ""
+            chk("reviewer notes use 'Michael' (not 'Marcus')",
+                "Michael" in notes2 and "Marcus" not in notes2,
+                f"len={len(notes2)}")
+            chk("reviewer notes mention Restore Purchases",
+                "Restore Purchases" in notes2 or "Restore" in notes2,
+                "")
+            chk("reviewer notes reference Build #27",
+                "Build #27" in notes2,
+                "")
+        except Exception as e:
+            chk("reviewer notes fetch", False, f"err: {e}")
 
         # Frontend code grep — make sure no '30 day' copy remains
         frontend_files = [

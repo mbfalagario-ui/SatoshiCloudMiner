@@ -337,6 +337,15 @@ class BuyPackageRequest(BaseModel):
     apple_transaction_id: Optional[str] = None  # iOS App Store transaction id from StoreKit
 
 
+class RestorePurchaseItem(BaseModel):
+    transaction_id: str
+    product_id: str
+
+
+class RestorePurchasesRequest(BaseModel):
+    purchases: List[RestorePurchaseItem]
+
+
 class CheckinResponse(BaseModel):
     awarded_usd: float
     streak: int
@@ -1025,6 +1034,113 @@ async def buy_package(
             "verified": not apple_info.get("_mocked", True),
             "environment": apple_info.get("environment"),
         },
+    }
+
+
+# ---------------------------- Routes: Restore Purchases ----------------------------
+# Apple Guideline 3.1.1 requires apps offering restorable IAPs to expose an
+# explicit user-initiated "Restore Purchases" action. The frontend calls
+# react-native-iap.getAvailablePurchases() which talks to StoreKit and
+# returns every entitlement this Apple ID has ever paid for. The frontend
+# forwards those (transactionId, productId) tuples here; we verify each
+# with Apple's App Store Server API and idempotently re-grant any package
+# the user does not currently have on this account.
+@api.post("/iap/restore")
+async def restore_purchases(
+    payload: RestorePurchasesRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    restored: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+    now = now_utc()
+
+    for item in payload.purchases:
+        tid = item.transaction_id.strip()
+        pid = item.product_id.strip()
+        if not tid or not pid:
+            continue
+
+        pkg = next((p for p in SHOP_PACKAGES if p["id"] == pid), None)
+        if not pkg:
+            skipped.append({"product_id": pid, "reason": "unknown_product"})
+            continue
+
+        # Idempotency: if this transactionId is already in a transaction
+        # record, we treat this user as already entitled and skip.
+        existing = await db.transactions.find_one(
+            {"apple_transaction_id": tid}, {"_id": 0, "user_id": 1, "package_id": 1}
+        )
+        if existing and existing.get("user_id") == current_user["id"]:
+            skipped.append({"product_id": pid, "reason": "already_owned"})
+            continue
+        if existing and existing.get("user_id") != current_user["id"]:
+            errors.append({"product_id": pid, "reason": "redeemed_by_another_account"})
+            continue
+
+        # Verify with Apple before granting.
+        try:
+            apple_info = verify_apple_transaction(tid, expected_product_id=pkg["id"])
+        except ValueError as e:
+            errors.append({"product_id": pid, "reason": f"apple_verify_failed: {e}"})
+            continue
+        except Exception as e:
+            logger.exception("restore verify crashed for tid=%s", tid)
+            errors.append({"product_id": pid, "reason": f"verify_error: {e}"})
+            continue
+
+        # Grant the entitlement (mirror /packages/buy semantics, sans bonus).
+        if pkg.get("entitlement") == "ad_free":
+            await db.users.update_one(
+                {"id": current_user["id"]},
+                {"$set": {"ad_free": True, "ad_free_purchased_at": now.isoformat()}},
+            )
+        else:
+            boost_ghs = pkg.get("hashrate_boost_ghs", 0)
+            duration_h = pkg.get("duration_hours", 0)
+            machine = {
+                "id": str(uuid.uuid4()),
+                "user_id": current_user["id"],
+                "package_id": pkg["id"],
+                "name": pkg["name"],
+                "hashrate_boost_ghs": boost_ghs,
+                "hash_rate": boost_ghs,
+                "duration_hours": duration_h,
+                "purchased_at": now.isoformat(),
+                "expires_at": (
+                    (now + timedelta(hours=duration_h)).isoformat()
+                    if duration_h and duration_h > 0 else None
+                ),
+                "status": "active",
+                "restored": True,
+            }
+            await db.machines.insert_one(machine)
+
+        await db.transactions.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": current_user["id"],
+                "type": "purchase",
+                "amount_usd": pkg["price_usd"],
+                "amount_btc": 0.0,
+                "status": "completed",
+                "description": f"Restored {pkg['name']}",
+                "package_id": pkg["id"],
+                "apple_transaction_id": tid,
+                "apple_environment": apple_info.get("environment"),
+                "apple_mocked": bool(apple_info.get("_mocked")),
+                "restored": True,
+                "created_at": now.isoformat(),
+            }
+        )
+        restored.append({"product_id": pid, "package_name": pkg["name"]})
+
+    return {
+        "success": True,
+        "restored_count": len(restored),
+        "restored": restored,
+        "skipped": skipped,
+        "errors": errors,
     }
 
 

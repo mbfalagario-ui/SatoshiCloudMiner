@@ -11,7 +11,7 @@ import { api } from '@/src/utils/api';
 import { useSession } from '@/src/ctx';
 import { colors, radius, spacing, fonts, fmtUsd, fmtGhs } from '@/src/utils/theme';
 import CrossSellBanner from '@/src/components/CrossSellBanner';
-import { buyProduct, isIapAvailable } from '@/src/utils/iap';
+import { buyProduct, isIapAvailable, restorePurchases } from '@/src/utils/iap';
 
 type Pkg = {
   id: string;
@@ -139,6 +139,54 @@ export default function Store() {
   const selected = useMemo(() => packages.find((p) => p.id === selectedId), [packages, selectedId]);
   const totalGhs = earnings?.hashrate?.total_ghs || 0;
 
+  // Apple Guideline 3.1.1 — explicit user-initiated Restore Purchases.
+  // Tap → fetches every entitlement on this Apple ID via StoreKit, forwards
+  // to /api/iap/restore which verifies each with Apple's Server API and
+  // idempotently re-grants whatever this user is missing.
+  const onRestore = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (Platform.OS !== 'ios') {
+        Alert.alert('Restore Purchases', 'Apple In-App Purchase restore is only available on iOS devices.');
+        return;
+      }
+      if (!isIapAvailable()) {
+        Alert.alert('Restore Purchases', 'Apple In-App Purchase is not available on this device. Make sure you are signed in to the App Store.');
+        return;
+      }
+      const items = await restorePurchases();
+      if (items.length === 0) {
+        Alert.alert('Nothing to restore', 'There are no previous purchases on this Apple ID for Hashrate Cloud Miner.');
+        return;
+      }
+      const r = await api('/iap/restore', {
+        method: 'POST',
+        body: JSON.stringify({
+          purchases: items.map((i) => ({ transaction_id: i.transactionId, product_id: i.productId })),
+        }),
+      });
+      const restored = (r?.restored || []).length;
+      const skipped = (r?.skipped || []).length;
+      const errs = (r?.errors || []).length;
+      const parts: string[] = [];
+      if (restored > 0) parts.push(`${restored} restored`);
+      if (skipped > 0) parts.push(`${skipped} already owned`);
+      if (errs > 0) parts.push(`${errs} error${errs === 1 ? '' : 's'}`);
+      Alert.alert(
+        restored > 0 ? 'Purchases restored' : 'Restore complete',
+        parts.join(' · ') || 'No new purchases were restored.',
+      );
+      await load();
+      await refresh();
+    } catch (e: any) {
+      const msg = e?.message || 'Restore failed. Please try again.';
+      Alert.alert('Restore failed', msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (packages.length === 0) {
     return (
       <SafeAreaView style={styles.safe}><View style={styles.center}><ActivityIndicator color={colors.primary} size="large" /></View></SafeAreaView>
@@ -152,8 +200,24 @@ export default function Store() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
-        <Text style={styles.title}>Store</Text>
-        <Text style={styles.subtitle}>Boost hashrate · First purchase gets free GH/s</Text>
+        <View style={styles.titleRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Store</Text>
+            <Text style={styles.subtitle}>Boost hashrate · First purchase gets free GH/s</Text>
+          </View>
+          {Platform.OS === 'ios' ? (
+            <TouchableOpacity
+              testID="restore-purchases-btn"
+              onPress={onRestore}
+              disabled={busy}
+              style={styles.restoreBtn}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="refresh" size={14} color={colors.primary} />
+              <Text style={styles.restoreBtnText}>Restore</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
 
         <CrossSellBanner data={crossSell} />
 
@@ -290,6 +354,24 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.lg },
   title: { color: colors.text, fontSize: 28, fontWeight: '800' },
   subtitle: { color: colors.textSecondary, fontSize: 13, marginTop: 4, marginBottom: spacing.md },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  restoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primary + '66',
+    backgroundColor: colors.primary + '14',
+    marginTop: 6,
+  },
+  restoreBtnText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
   activeCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md,

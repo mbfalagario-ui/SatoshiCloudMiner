@@ -300,6 +300,74 @@ export async function buyProduct(productId: string): Promise<IapBuyResult> {
 }
 
 /**
+ * Apple Guideline 3.1.1: Restore previously-purchased non-consumables on
+ * this Apple ID. Returns an array of {transactionId, productId} for every
+ * past purchase Apple can verify (across devices, after reinstall, etc).
+ * Caller is expected to forward this to /api/iap/restore so the backend
+ * idempotently re-grants the corresponding entitlement.
+ *
+ * react-native-iap v15 exposes `getAvailablePurchases()` which under the
+ * hood calls StoreKit2 `Transaction.currentEntitlements`.
+ */
+export async function restorePurchases(): Promise<Array<{ transactionId: string; productId: string }>> {
+  const iap = loadModule();
+  if (!iap) {
+    throw new Error(
+      'Apple In-App Purchase is unavailable on this device. Please ensure you are on iOS, signed in to the App Store, and try again.',
+    );
+  }
+  await initIap();
+
+  // Prefer the explicit "sync" call to force StoreKit to refresh from
+  // Apple's servers (Apple Reviewers expect tapping Restore to ping
+  // their servers even if local cache says nothing changed).
+  try {
+    if (typeof iap.syncIOS === 'function') {
+      await iap.syncIOS();
+    } else if (typeof iap.sync === 'function') {
+      await iap.sync();
+    } else if (typeof iap.restorePurchases === 'function') {
+      await iap.restorePurchases();
+    }
+  } catch (e) {
+    // Sync can throw if user cancels the Apple ID prompt — fall through
+    // and try to read whatever is locally cached.
+    // eslint-disable-next-line no-console
+    console.warn('[IAP] sync failed (non-fatal):', e);
+  }
+
+  let purchases: any[] = [];
+  try {
+    if (typeof iap.getAvailablePurchases === 'function') {
+      purchases = (await iap.getAvailablePurchases()) || [];
+    } else if (typeof iap.getPurchaseHistories === 'function') {
+      purchases = (await iap.getPurchaseHistories()) || [];
+    }
+  } catch (e: any) {
+    throw new Error(e?.message || 'Failed to fetch restored purchases.');
+  }
+
+  const out: Array<{ transactionId: string; productId: string }> = [];
+  for (const p of purchases) {
+    const tid =
+      p?.transactionId ??
+      p?.id ??
+      p?.originalTransactionIdentifierIOS ??
+      p?.transactionIdentifier ??
+      '';
+    const pid = p?.productId ?? p?.id ?? '';
+    if (tid && pid) out.push({ transactionId: String(tid), productId: String(pid) });
+    // Mark transaction finished so StoreKit doesn't keep replaying it.
+    try {
+      if (typeof iap.finishTransaction === 'function') {
+        await iap.finishTransaction({ purchase: p, isConsumable: false });
+      }
+    } catch {}
+  }
+  return out;
+}
+
+/**
  * Tear down listeners and the connection. Optional — only useful in test
  * harnesses where we want a clean slate between scenarios.
  */
