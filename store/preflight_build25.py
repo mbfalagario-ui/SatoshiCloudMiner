@@ -182,6 +182,21 @@ def main() -> int:
                 http_status(u) == 200,
                 f"{u}")
 
+        # Screenshots — must have iPhone 6.7", 6.5", and iPad 12.9" sets
+        rr = c.get(f"/v1/appStoreVersionLocalizations/{vl['id']}/appScreenshotSets",
+                   headers=a._headers(), params={"limit": 50})
+        sets = {s["attributes"]["screenshotDisplayType"]: s["id"]
+                for s in rr.json().get("data", [])}
+        for dt in ("APP_IPHONE_67", "APP_IPHONE_65", "APP_IPAD_PRO_3GEN_129"):
+            chk(f"2.3.3 screenshot set {dt} exists",
+                dt in sets,
+                f"{dt}")
+            if dt in sets:
+                rs = c.get(f"/v1/appScreenshotSets/{sets[dt]}/appScreenshots",
+                           headers=a._headers())
+                n = len(rs.json().get("data", []))
+                chk(f"2.3.3 {dt} has ≥4 screenshots", n >= 4, f"count={n}")
+
         # /api/auth/me DELETE endpoint exists (returns 401 unauth, NOT 404)
         try:
             req = urllib.request.Request(

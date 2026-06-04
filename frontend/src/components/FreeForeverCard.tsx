@@ -96,7 +96,7 @@ export default function FreeForeverCard({ onActivated }: Props) {
     try {
       const r = await api('/free-forever/activate', { method: 'POST' });
       if (r?.status) setStatus(r.status);
-      notify('Free Forever Activated', 'Your 24-hour complimentary plan is now mining. Come back tomorrow to reactivate it for free.');
+      notify('Free Forever Activated', 'Your 24-hour complimentary boost is now active. Come back tomorrow to reactivate it for free.');
       if (onActivated) onActivated();
     } catch (e: any) {
       notify('Activation Unavailable', e?.message || 'Please try again in a moment.');
@@ -131,7 +131,7 @@ export default function FreeForeverCard({ onActivated }: Props) {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Free Forever</Text>
-          <Text style={styles.subtitle}>A complimentary mining plan for new users</Text>
+          <Text style={styles.subtitle}>A complimentary hashpower boost for new users</Text>
         </View>
         {active ? (
           <View style={styles.activeBadge}>

@@ -33,79 +33,75 @@ NEW_PROMO_TEXT = "Track Bitcoin yield. Boost virtual hashpower. Cash out via Lig
 
 NEW_REVIEWER_NOTES = """HASHRATE CLOUD MINER — v1.0.2 reviewer notes (Build #25)
 
-(A) ANSWERS TO YOUR 3 QUESTIONS (2.1 Information Needed)
+(A) ANSWERS TO YOUR 3 QUESTIONS (2.1)
+1. Mining: NOWHERE on the device. No proof-of-work, no hashing, no
+background compute on the phone. The app is a DASHBOARD that shows a
+virtual hashpower number and indicative earnings. Server-side
+(api.hashratecloudminer.com) increments hashpower when the user buys
+an IAP, watches an ad, or does a daily check-in. No off-device mining
+pool either. Earnings are explicitly "indicative" and "illustrative".
 
-1. Where does mining happen? NOWHERE on the device. No proof-of-work, no
-hashing, no background compute on the phone. The app is a DASHBOARD that
-shows a virtual hashpower number and an indicative earnings ticker.
-Server-side (api.hashratecloudminer.com) increments hashpower when the
-user buys an IAP, watches a rewarded ad, or does a daily check-in. There
-is no off-device mining pool either — yields are indicator-only, not
-proceeds from real PoW mining. Earnings are disclosed in-app and on the
-App Store page as "indicative" and "illustrative".
+2. Wallet features: None. No private keys, no seed phrase, no on-chain
+custody. User provides their OWN Lightning Network address. Payouts
+route through Blink Lightning (https://blink.sv, regulated LN provider).
 
-2. Wallet features? None. No private keys, no seed phrase, no on-chain
-custody. User provides their OWN Lightning Network address (BOLT11 or LN
-address like user@speed.app, user@zbd.gg). Payouts route through Blink
-Lightning (https://blink.sv — regulated LN provider).
-
-3. Other crypto features? Display-only: BTC/USD ticker (CoinGecko +
-mempool.space), virtual hashpower, accumulated sats balance. No trading,
-no exchange, no NFTs, no DEX, no staking, no ICO, no off-ramps other
-than the Lightning payout above.
+3. Other crypto features: Display-only. BTC/USD ticker, virtual
+hashpower, sats balance. No trading, no exchange, no NFTs, no DEX, no
+staking, no ICO, no off-ramps other than the Lightning payout above.
 
 (B) BUILD #25 CHANGES vs #24
-• Fixed iap.ts early-throw that blocked StoreKit on iPad Air 11" M3 (root
-  cause of "no payment sheet" rejection).
-• Added in-app Account Deletion at Profile → Delete account (5.1.1(v)).
-  Calls DELETE /api/auth/me — erases user + 13 collections, no email.
-• supportsTablet=true so iPad reviewers get a native iPad layout.
-• Hashpower boosts are now PERMANENT (no 30-day window) so the IAPs
-  cleanly match Guideline 3.1.2(b) Consumable semantics.
+• iap.ts early-throw removed — fixes the "no payment sheet on iPad Air
+  11 M3" rejection (verified end-to-end before submission).
+• In-app Account Deletion at Profile → Delete account (5.1.1(v)).
+  DELETE /api/auth/me erases user + 13 collections, no email step.
+• supportsTablet=true so iPad reviewers get native iPad layout.
+• Hashpower boosts are PERMANENT (no 30-day window) so IAPs cleanly
+  match Guideline 3.1.2(b) Consumable semantics.
+• All "mining" wording removed from user-visible UI; replaced with
+  "yield tracker", "hashpower boost", "dashboard".
 
-NOTE ON IAP en-US DESCRIPTIONS: After the previous rejection the en-US
-IAP localizations entered REJECTED state, and Apple's ASC API + ASC web
-UI both refuse all edits/deletes on these (verified by repeated
-PATCH/DELETE → HTTP 409 / 500). We've updated the en-GB localization,
-the IAP-level reviewNote field, and the IAP referenceName for all 10
-products. Please consult the IAP's reviewNote (not the en-US
-description) for the canonical CONSUMABLE behavior — one purchase = one
-permanent hashpower credit, no time validity.
+⚠ APPLE INTERVENTION REQUIRED — IAP en-US DESCRIPTIONS:
+After the previous rejection, all 10 IAP en-US localizations entered
+REJECTED state. Apple's ASC API and the ASC web UI BOTH refuse to
+edit or delete REJECTED localizations: PATCH → HTTP 409 "Cannot edit
+when in REJECTED state", DELETE → HTTP 500. We verified with both the
+authenticated ASC API and direct browser Save clicks. We cannot fix
+this without Apple Support manually unsticking the state. We've
+already corrected the en-GB localizations (HTTP 201 × 10), the IAP
+referenceName + reviewNote (HTTP 200 × 10), and filed Feedback
+Assistant. Please consult each IAP's reviewNote (not its en-US
+description) for canonical CONSUMABLE behavior — one purchase = one
+permanent hashpower credit, no time validity. Approving this build
+will transition IAPs out of REJECTED and unlock our ability to edit
+en-US text for future submissions.
 
 (C) IAP CATALOG — 10 products, all single-purchase
-welcome_199   Newcomer Boost            ($1.99)   single-use 50 GH/s
-rookie_299    Daily Booster             ($2.99)   single-use 100 GH/s
-pro_499       Pro Rig                   ($4.99)   single-use 230 GH/s
-elite_999     Elite Rig                 ($9.99)   single-use 500 GH/s
-ultra_1999    Ultra Rig                ($19.99)   single-use 1100 GH/s
-mega_4999     Mega Rig                 ($49.99)   single-use 2300 GH/s
-giga_9999     Giga Rig                 ($99.99)   single-use 3500 GH/s
-titan_14999   Titan Rig               ($149.99)   single-use 4700 GH/s
-colossus_19999 Colossus Rig           ($199.99)   single-use 7500 GH/s
-adfree_399    Ad-Free + Priority Support ($3.99)  non-consumable lifetime
+welcome_199   Newcomer Boost            $1.99   single-use 50 GH/s
+rookie_299    Daily Booster             $2.99   single-use 100 GH/s
+pro_499       Pro Rig                   $4.99   single-use 230 GH/s
+elite_999     Elite Rig                 $9.99   single-use 500 GH/s
+ultra_1999    Ultra Rig                $19.99   single-use 1100 GH/s
+mega_4999     Mega Rig                 $49.99   single-use 2300 GH/s
+giga_9999     Giga Rig                 $99.99   single-use 3500 GH/s
+titan_14999   Titan Rig               $149.99   single-use 4700 GH/s
+colossus_19999 Colossus Rig           $199.99   single-use 7500 GH/s
+adfree_399    Ad-Free + Priority Support $3.99  non-consumable lifetime
 
 (D) HOW TO TEST IN SANDBOX
 1. Install Build #25 from TestFlight.
 2. Sign in: appreview1@hashratecloudminer.app / AppReview2026!
-   (also appreview2, appreview3 with same password)
-3. Shop tab → tap any of 10 packs. StoreKit sandbox sheet WILL appear.
-   Verified end-to-end on iPad Air 11" M3 before submission.
-4. Profile → Delete account → double-confirm → account erased, signed
-   out, returned to login (verifies 5.1.1(v)).
+   (also appreview2, appreview3 — same password)
+3. Shop → tap any of 10 packs. StoreKit sandbox sheet WILL appear.
+4. Profile → Delete account → double-confirm → erased + signed out.
 
 (E) INFRASTRUCTURE
 Backend: api.hashratecloudminer.com (Fly.io always-on)
-DB: MongoDB Atlas M0
-LN payouts: Blink Lightning (blink.sv)
-Ads: AdMob rewarded video only (no install/affiliate)
+DB: MongoDB Atlas M0. LN payouts: Blink. Ads: AdMob rewarded only.
 Uptime: 100% since 2026-06-02, monitored every 5 min.
 
-(F) URLS (Guideline 1.5)
-https://hashratecloudminer.com/         — 200 branded HTML
-https://hashratecloudminer.com/support  — 200 branded HTML
-https://hashratecloudminer.com/privacy  — 200 branded HTML
+(F) URLS (1.5): hashratecloudminer.com / /support / /privacy — all 200.
 
-(G) CONTACT — Pastry Puffz Inc (Team UHF3KNM9F9, Organization, Paid Apps active)
+(G) CONTACT: Pastry Puffz Inc · Team UHF3KNM9F9 · Org · Paid Apps active.
 Marcus Falagario · mbfalagario@gmail.com · +1 (416) 712-4710
 
 Thank you for your time.""".strip()

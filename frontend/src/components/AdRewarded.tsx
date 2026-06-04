@@ -64,7 +64,7 @@ export default function AdRewarded({
             <Ionicons name="flash" size={56} color={colors.primary} />
           </View>
           <Text style={styles.headline}>Free hashrate</Text>
-          <Text style={styles.sub}>Watch the full ad to earn a 24-hour mining boost.</Text>
+          <Text style={styles.sub}>Watch the full ad to earn a 24-hour hashpower boost.</Text>
         </View>
         <View style={styles.bar}>
           <Animated.View

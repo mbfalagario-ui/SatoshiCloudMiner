@@ -57,7 +57,7 @@ export default function SignIn() {
           </TouchableOpacity>
 
           <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Sign in to continue mining.</Text>
+          <Text style={styles.subtitle}>Sign in to your dashboard.</Text>
 
           <View style={styles.field}>
             <Text style={styles.label}>Email</Text>

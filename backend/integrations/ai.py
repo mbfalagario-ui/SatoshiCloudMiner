@@ -87,13 +87,16 @@ async def market_commentary(btc_usd: Optional[float] = None) -> Dict[str, Any]:
     text = await _chat(
         prompt=(
             f"{price_note}Write ONE short, neutral sentence (max 20 words) "
-            "summarising today's Bitcoin mining + Lightning Network conditions. "
+            "summarising today's Bitcoin network and Lightning Network conditions. "
             "Mention one concrete signal (hashrate, mempool, fee rate, "
-            "difficulty, lightning capacity, or routing). No financial advice, "
-            "no buy/sell language. Return ONLY the sentence."
+            "difficulty, lightning capacity, or routing). Treat the user as "
+            "viewing a yield-tracking dashboard, NOT performing on-device mining. "
+            "Use 'network conditions' or 'network hashrate' rather than 'mining'. "
+            "No financial advice, no buy/sell language. Return ONLY the sentence."
         ),
         system=(
-            "You write tiny news-ticker style updates for a cloud-mining app. "
+            "You write tiny news-ticker updates for a Bitcoin yield-tracking "
+            "dashboard. The app does NOT mine on-device — never imply it does. "
             "Concise, factual, no hype, no recommendation to buy/sell."
         ),
         session_id=f"ticker-{time.strftime('%Y%m%d')}",

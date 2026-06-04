@@ -93,7 +93,7 @@ export default function SignUp() {
           </TouchableOpacity>
 
           <Text style={styles.title}>Create your account</Text>
-          <Text style={styles.subtitle}>Start mining with a free Newcomer Boost.</Text>
+          <Text style={styles.subtitle}>Start with a free Newcomer Boost.</Text>
 
           <View style={styles.field}>
             <Text style={styles.label}>Email</Text>

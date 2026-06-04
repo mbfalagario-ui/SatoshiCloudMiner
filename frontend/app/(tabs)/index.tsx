@@ -126,7 +126,7 @@ export default function Home() {
                 isMining && { opacity: pulseOpacity },
               ]} />
               <Text style={[styles.statusText, !isMining && styles.statusTextIdle]}>
-                {isMining ? 'MINING' : 'IDLE'}
+                {isMining ? 'ACTIVE' : 'IDLE'}
               </Text>
             </View>
           </View>

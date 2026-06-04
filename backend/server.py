@@ -1710,9 +1710,7 @@ async def admob_ssv_callback(request: Request):
     the user's IAP. Each verified callback grants a progressive GH/s reward
     based on the user's ad count today (1-5: 1.5 GH/s, 6-10: 3.0, 11-15: 5.0,
     16-20: 7.0, 21-25: 9.5, 26-30: 12.0 GH/s). Max 30 ads/day, resets at
-    1:00 AM UTC. Each ad's boost lasts 24h independently.
-
-    Idempotent on `transaction_id` (ad_view_id). Returns 200 on success
+    1:00 AM UTC. Each ad's boost lasts 24h independently.    Idempotent on `transaction_id` (ad_view_id). Returns 200 on success
     so AdMob doesn't retry, including for duplicates.
     """
     from integrations import admob as admob_mod

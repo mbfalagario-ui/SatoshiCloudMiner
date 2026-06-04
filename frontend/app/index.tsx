@@ -47,7 +47,7 @@ export default function Onboarding() {
       />
 
       <View style={styles.heroWrap}>
-        <Image source={{ uri: media.miningHardware }} style={styles.hero} />
+        <Image source={{ uri: media.cryptoCoin }} style={styles.hero} />
         <View style={styles.glowOrb} />
       </View>
 
@@ -58,19 +58,20 @@ export default function Onboarding() {
         </View>
 
         <Text style={styles.title}>
-          Mine smarter.{'\n'}
-          <Text style={{ color: colors.primary }}>Earn anywhere.</Text>
+          Track yield.{'\n'}
+          <Text style={{ color: colors.primary }}>Cash out in sats.</Text>
         </Text>
 
         <Text style={styles.subtitle}>
-          Hashrate Cloud Miner puts a cloud mining farm in your pocket. No rigs, no setup —
-          just instant access to enterprise hash power and live earnings.
+          Hashrate Cloud Miner is a non-custodial Bitcoin yield dashboard. Track indicative
+          earnings, boost virtual hashpower, and withdraw to a Lightning address you control.
+          No on-device computation. No wallet custody.
         </Text>
 
         <View style={styles.features}>
-          <Feature icon="flash" text="Instant cloud mining" />
-          <Feature icon="trending-up" text="Live earnings tracker" />
-          <Feature icon="shield-checkmark" text="Secure withdrawals" />
+          <Feature icon="flash" text="Indicative earnings dashboard" />
+          <Feature icon="trending-up" text="Live BTC + Lightning ticker" />
+          <Feature icon="shield-checkmark" text="Non-custodial withdrawals" />
         </View>
 
         <TouchableOpacity

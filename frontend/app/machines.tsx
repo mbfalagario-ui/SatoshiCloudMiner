@@ -42,7 +42,7 @@ export default function Machines() {
         <TouchableOpacity testID="back-btn" onPress={() => router.back()} style={styles.back}>
           <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.title}>My Miners</Text>
+        <Text style={styles.title}>My Boosts</Text>
         <View style={{ width: 40 }} />
       </View>
 
