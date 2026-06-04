@@ -45,6 +45,16 @@
         "ascApiKeyId": "WFQJ6L9KXS",
         "ascApiKeyIssuerId": "d3284874-7bd8-4eff-b272-c9ef0122df9a"
       }
+    },
+    "production-prod-domain": {
+      "ios": {
+        "appleId": "mbfalagario@gmail.com",
+        "ascAppId": "6773104756",
+        "appleTeamId": "UHF3KNM9F9",
+        "ascApiKeyPath": "../backend/keys/AuthKey_WFQJ6L9KXS.p8",
+        "ascApiKeyId": "WFQJ6L9KXS",
+        "ascApiKeyIssuerId": "d3284874-7bd8-4eff-b272-c9ef0122df9a"
+      }
     }
   }
 }
