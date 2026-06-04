@@ -13,7 +13,10 @@ type Machine = {
   daily_yield_usd: number;
   duration_days: number;
   purchased_at: string;
-  expires_at: string;
+  // null = permanent (v1.0.2 Build #27 — all IAP packs are permanent per
+  // Apple Guideline 3.1.2(b); legacy time-bounded boosts still carry an
+  // ISO string).
+  expires_at: string | null;
   status: string;
 };
 
@@ -54,7 +57,7 @@ export default function Machines() {
         ListEmptyComponent={
           !loading ? (
             <View style={{ marginTop: 80, alignItems: 'center' }}>
-              <Text style={styles.empty}>You don't own any miners yet.</Text>
+              <Text style={styles.empty}>You don't own any boosts yet.</Text>
               <TouchableOpacity
                 testID="machines-shop-cta"
                 style={styles.cta}
@@ -66,23 +69,40 @@ export default function Machines() {
           ) : null
         }
         renderItem={({ item }) => {
-          const exp = new Date(item.expires_at);
-          const days = Math.max(0, Math.ceil((exp.getTime() - Date.now()) / 86400000));
-          const active = item.status === 'active' && days > 0;
+          // expires_at === null → PERMANENT entitlement (v1.0.2 Build #27,
+          //   Apple 3.1.2(b) compliance). Backend writes null for every
+          //   IAP boost pack. Display as a permanent active boost — NEVER
+          //   greyed out, no "X days left", no "Expired" / "Idle".
+          // expires_at === string → legacy time-bounded boost; compute
+          //   remaining days as before.
+          const isPermanent = item.expires_at == null;
+          const exp = isPermanent ? null : new Date(item.expires_at as string);
+          const days = isPermanent
+            ? 0
+            : Math.max(0, Math.ceil((exp!.getTime() - Date.now()) / 86400000));
+          const active =
+            item.status === 'active' && (isPermanent || days > 0);
+          const statusLabel = isPermanent
+            ? 'Permanent · Active'
+            : active
+            ? `Active · ${days}d left`
+            : item.status === 'expired'
+            ? 'Expired'
+            : 'Idle';
           return (
             <View style={[styles.row, !active && { opacity: 0.55 }]} testID={`machine-${item.id}`}>
-              <Image source={{ uri: media.miningHardware }} style={styles.thumb} />
+              <Image source={{ uri: media.cryptoCoin }} style={styles.thumb} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
                 <View style={styles.metaRow}>
-                  <Text style={styles.meta}>{item.hash_rate.toFixed(0)} TH/s</Text>
+                  <Text style={styles.meta}>{item.hash_rate.toFixed(0)} GH/s</Text>
                   <Text style={styles.dot}>·</Text>
                   <Text style={styles.meta}>{fmtUsd(item.daily_yield_usd)}/day</Text>
                 </View>
                 <View style={[styles.statusPill, active ? styles.statusActive : styles.statusOff]}>
                   <View style={[styles.statusDot, { backgroundColor: active ? colors.primary : colors.textTertiary }]} />
                   <Text style={[styles.statusText, { color: active ? colors.primary : colors.textTertiary }]}>
-                    {active ? `Active · ${days}d left` : item.status === 'expired' ? 'Expired' : 'Idle'}
+                    {statusLabel}
                   </Text>
                 </View>
               </View>

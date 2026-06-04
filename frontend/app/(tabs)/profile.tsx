@@ -110,7 +110,7 @@ export default function Profile() {
   const onDeleteAccount = () => {
     confirmDialog(
       'Delete account?',
-      'This permanently erases your account, balance, miners, transactions, and all data. This cannot be undone.',
+      'This permanently erases your account, balance, boosts, transactions, and all data. This cannot be undone.',
       () => {
         confirmDialog(
           'Are you sure?',
