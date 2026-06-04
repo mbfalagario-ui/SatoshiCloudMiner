@@ -2,13 +2,13 @@
   "expo": {
     "name": "Hashrate Cloud Miner",
     "slug": "satoshi-cloud-miner",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "hashratecloudminer",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
-    "description": "Hashrate Cloud Miner \u2014 Bitcoin cloud-mining performance dashboard with AI yield agents and Lightning payouts.",
+    "description": "Hashrate Cloud Miner — Non-custodial Bitcoin yield-tracking dashboard. Track indicative earnings, boost virtual hashpower, and withdraw to your own Lightning Network address. No on-device mining.",
     "primaryColor": "#00FFA3",
     "ios": {
       "supportsTablet": true,
