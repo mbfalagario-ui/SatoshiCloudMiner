@@ -3146,3 +3146,75 @@ agent_communication:
 
         WAITING ON: Apple's review (typical: 24-48h).
 
+
+
+####################################################################
+#  2026-06-05 — Track B / Build #33 prep: Crash Telemetry Pipeline
+####################################################################
+
+  CONTEXT
+  -------
+  Build #32 (currently WAITING_FOR_REVIEW at Apple) included the AdMob +
+  ATT + sign-out crash fixes. However, on Michael's iPhone (iOS 26.5
+  beta) Build #32 still crashed via the React Native
+  `RCTExceptionsManager` native code path — Foundation APIs abort the
+  app when handling certain JS stack traces under iOS 26.5.
+
+  Per GPT/Michael's calibration:
+    "implement the JS handling carefully... Add an ErrorBoundary,
+     unhandled promise rejection logging/telemetry, prioritize getting
+     a symbolicated crash for the next occurrence."
+
+  WHAT SHIPPED (Track B / Build #33 candidate)
+  --------------------------------------------
+  Backend
+    + POST  /api/telemetry/crash          (no auth — captures from any client)
+    + GET   /api/admin/telemetry/crashes  (admin-only, returns most recent N)
+    + MongoDB collection: crash_reports
+
+  Frontend
+    + src/utils/errorHandler.ts          — 3-layer JS exception fence:
+        1. global.ErrorUtils.setGlobalHandler (uncaught JS errors)
+        2. HermesInternal.enablePromiseRejectionTracker
+        3. React ErrorBoundary (render-phase errors)
+        + AsyncStorage persistence + drain-on-launch retry
+        + EventEmitter-style fatal broadcast → ErrorBoundary subscriber
+          (REPLACED the previous setTimeout(rethrow) which would
+          infinite-loop through ErrorUtils on iOS)
+    + src/components/ErrorBoundary.tsx   — subscribes to fatal broadcast
+    + app/_layout.tsx                    — installs handlers BEFORE any
+                                           other module imports; wraps
+                                           root in ErrorBoundary
+    + app/admin/telemetry.tsx (NEW)      — admin UI: list crashes,
+                                           expand for stack trace, pull
+                                           to refresh; reads from
+                                           /api/admin/telemetry/crashes
+
+  PRE-FLIGHT VALIDATION (no EAS credits used)
+  -------------------------------------------
+  ✓ POST /api/telemetry/crash (correct schema)          → HTTP 200
+  ✓ POST /api/telemetry/crash (unhandled-rejection)     → HTTP 200
+  ✓ POST /api/telemetry/crash (render-boundary)         → HTTP 200
+  ✓ POST /api/telemetry/crash (empty body, edge case)   → HTTP 200
+  ✓ GET  /api/admin/telemetry/crashes (no auth)         → HTTP 401
+  ✓ GET  /api/admin/telemetry/crashes (admin auth)      → HTTP 200, sorted desc
+  ✓ Python ruff lint:    0 errors
+  ✓ TypeScript ESLint:   0 errors on all touched files
+
+  KNOWN PRE-EXISTING ISSUES (NOT introduced by this work)
+  -------------------------------------------------------
+  - Dev/web Metro bundle fails: babel-preset-expo cannot resolve
+    `react-native-worklets/plugin` because react-native-reanimated@4.1.7
+    is installed but react-native-worklets is missing.
+    (Per handoff, the previous agent removed worklets while
+    disabling the New Architecture for the iOS 26 TurboModule fix.)
+    EAS production builds still work — Build #32 reached WAITING_FOR_REVIEW.
+    Web preview screenshots cannot be taken until this is resolved
+    (resolution out of scope: requires installing worklets, which is
+    risky without revisiting the iOS-26 TurboModule fix path).
+
+  WAITING ON
+  ----------
+  - Michael's explicit `BUILD` command before any EAS submission.
+  - Build #32 Apple Review verdict (telemetry pipeline is the safety
+    net if #32 is rejected OR if iOS 26.5 still crashes on prod build).

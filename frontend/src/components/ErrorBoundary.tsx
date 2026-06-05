@@ -19,7 +19,11 @@
  */
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
-import { recordRenderError } from '@/src/utils/errorHandler';
+import {
+  recordRenderError,
+  addFatalErrorListener,
+  consumePendingFatal,
+} from '@/src/utils/errorHandler';
 
 type Props = { children: React.ReactNode };
 type State = {
@@ -30,6 +34,7 @@ type State = {
 
 export default class ErrorBoundary extends React.Component<Props, State> {
   state: State = { hasError: false, message: '', stack: '' };
+  private _unsub: (() => void) | null = null;
 
   static getDerivedStateFromError(error: Error): State {
     return {
@@ -37,6 +42,27 @@ export default class ErrorBoundary extends React.Component<Props, State> {
       message: String(error?.message ?? error ?? 'Unknown error'),
       stack: String(error?.stack ?? ''),
     };
+  }
+
+  componentDidMount() {
+    // If a fatal global JS error fired BEFORE this boundary mounted,
+    // pick it up now so the fallback UI is shown rather than the
+    // possibly-broken root tree continuing to render.
+    const pending = consumePendingFatal();
+    if (pending) {
+      this.setState({ hasError: true, message: pending.message, stack: pending.stack });
+    }
+    // Subscribe to future fatal global errors so the boundary can
+    // render the fallback without the global handler re-throwing
+    // (which would infinite-loop through `ErrorUtils.setGlobalHandler`).
+    this._unsub = addFatalErrorListener((message, stack) => {
+      this.setState({ hasError: true, message, stack });
+    });
+  }
+
+  componentWillUnmount() {
+    try { this._unsub?.(); } catch {}
+    this._unsub = null;
   }
 
   componentDidCatch(error: Error, info: { componentStack: string }) {

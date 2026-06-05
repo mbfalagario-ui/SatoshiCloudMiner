@@ -67,6 +67,10 @@ export default function AdminLayout() {
         name="strategist"
         options={{ headerShown: true, title: 'AI Strategist' }}
       />
+      <Stack.Screen
+        name="telemetry"
+        options={{ headerShown: true, title: 'Crash Telemetry' }}
+      />
     </Stack>
   );
 }

@@ -55,6 +55,41 @@ type StoredCrash = {
 
 let _installed = false;
 
+/* ────────────────────────────────────────────────────────────────────
+ * Fatal-error broadcast.
+ * Why this exists: when the global handler captures a fatal JS error,
+ * we must NOT re-throw it (re-throwing routes it back through
+ * `ErrorUtils.reportError` → `_globalHandler` → infinite loop). Instead
+ * we publish to a tiny in-process event bus that the React
+ * `ErrorBoundary` subscribes to via `componentDidMount` and flips its
+ * own state to show the fallback UI. We also keep ONE pending fatal in
+ * module memory so the boundary mounting AFTER the error can still
+ * pick it up.
+ * ──────────────────────────────────────────────────────────────────── */
+type FatalListener = (message: string, stack: string) => void;
+const _fatalListeners = new Set<FatalListener>();
+let _pendingFatal: { message: string; stack: string } | null = null;
+
+export function addFatalErrorListener(fn: FatalListener): () => void {
+  _fatalListeners.add(fn);
+  return () => {
+    _fatalListeners.delete(fn);
+  };
+}
+
+export function consumePendingFatal(): { message: string; stack: string } | null {
+  const p = _pendingFatal;
+  _pendingFatal = null;
+  return p;
+}
+
+function broadcastFatal(message: string, stack: string): void {
+  _pendingFatal = { message, stack };
+  for (const fn of _fatalListeners) {
+    try { fn(message, stack); } catch {}
+  }
+}
+
 /** Persist a crash record to AsyncStorage and best-effort POST to backend.
  *  Returns once persistence has flushed (or failed). */
 async function captureAndPersist(rec: StoredCrash): Promise<void> {
@@ -87,10 +122,12 @@ async function captureAndPersist(rec: StoredCrash): Promise<void> {
 }
 
 /** Top-level error handler installed via `global.ErrorUtils.setGlobalHandler`.
- *  Captures and persists, then RE-THROWS so React's ErrorBoundary can
- *  render the fallback UI. Does NOT delegate to RN's default handler
- *  (which is what crashes on iOS 26.5 beta via the RCTExceptionsManager
- *  native code path). */
+ *  Captures and persists. On fatal, broadcasts to the ErrorBoundary
+ *  subscriber so it can render fallback UI. Does NOT re-throw and does
+ *  NOT delegate to RN's default handler — those would route the error
+ *  back to native `RCTExceptionsManager` (which aborts on iOS 26.5 beta)
+ *  or back through ErrorUtils (which would re-enter THIS handler in an
+ *  infinite loop). */
 function handleGlobalError(error: any, isFatal?: boolean): void {
   const rec: StoredCrash = {
     ts: new Date().toISOString(),
@@ -107,16 +144,11 @@ function handleGlobalError(error: any, isFatal?: boolean): void {
   console.warn('[errorHandler] captured:', rec.type, rec.message);
   // Persist (best-effort, async). We do NOT await — JS may be unwinding.
   captureAndPersist(rec);
-  // Re-throw if fatal so ErrorBoundary can render fallback. For
-  // non-fatal errors we log and continue (RN's default is to do nothing
-  // for non-fatal in production).
+  // For fatal errors, broadcast to the React ErrorBoundary so it shows
+  // the fallback UI. Non-fatal errors just log + telemetry; the app
+  // continues running (matching RN's default production behaviour).
   if (isFatal) {
-    // Schedule the re-throw on next tick so the current call frame can
-    // unwind cleanly first. This lets React's reconciler observe the
-    // error via its own boundary path rather than the native bridge.
-    setTimeout(() => {
-      throw error;
-    }, 0);
+    broadcastFatal(rec.message, rec.stack);
   }
 }
 

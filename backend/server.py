@@ -687,7 +687,7 @@ async def register(payload: UserCreate):
                     "amount_usd": REFERRAL_BONUS_USD,
                     "amount_btc": usd_to_btc(REFERRAL_BONUS_USD),
                     "status": "completed",
-                    "description": f"Referral bonus from new user",
+                    "description": "Referral bonus from new user",
                     "created_at": now.isoformat(),
                 }
             )
