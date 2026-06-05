@@ -3603,6 +3603,61 @@ async def _ensure_admin_user() -> None:
         logger.warning("Admin seed failed: %s", e)
 
 
+# Apple App Review uses these accounts to sign in and test the app.
+# Build #31: this was the cause of one near-rejection — appreview1 had
+# been deleted from the prod DB (likely via DELETE /api/auth/me during a
+# previous reviewer/test session). When Apple's reviewer tried to sign
+# in, it failed with "Incorrect email or password" → Guideline 2.1
+# rejection in the making. This idempotent seed runs on every startup
+# and either creates the missing account OR resets its password to the
+# canonical value, so the same drift can never silently re-introduce
+# itself in the future.
+APP_REVIEW_EMAILS = [
+    "appreview1@hashratecloudminer.app",
+    "appreview2@hashratecloudminer.app",
+    "appreview3@hashratecloudminer.app",
+]
+APP_REVIEW_PASSWORD = "AppReview2026!"
+
+
+async def _ensure_reviewer_accounts() -> None:
+    now = now_utc()
+    for email in APP_REVIEW_EMAILS:
+        try:
+            existing = await db.users.find_one({"email": email})
+            if existing:
+                if not verify_password(APP_REVIEW_PASSWORD, existing.get("password_hash", "")):
+                    await db.users.update_one(
+                        {"id": existing["id"]},
+                        {"$set": {"password_hash": hash_password(APP_REVIEW_PASSWORD)}},
+                    )
+                    logger.info("Reviewer account password reset for %s", email)
+                continue
+            user_id = str(uuid.uuid4())
+            doc = {
+                "id": user_id,
+                "email": email,
+                "password_hash": hash_password(APP_REVIEW_PASSWORD),
+                "referral_code": gen_referral_code(),
+                "referred_by": None,
+                "balance_btc": 0.0,
+                "lifetime_earnings_btc": 0.0,
+                "last_accrual_at": now.isoformat(),
+                "last_checkin_at": None,
+                "checkin_streak": 0,
+                "is_admin": False,
+                "is_banned": False,
+                "auto_checkin": False,
+                "auto_reinvest": False,
+                "auto_reinvest_min_balance_usd": 4.99,
+                "created_at": now.isoformat(),
+            }
+            await db.users.insert_one(doc)
+            logger.info("Seeded reviewer account %s", email)
+        except Exception as e:
+            logger.warning("Reviewer seed failed for %s: %s", email, e)
+
+
 # ---------------------------- Scheduled jobs ----------------------------
 async def _job_accrue_all_users():
     cursor = db.users.find({}, {"_id": 0, "id": 1})

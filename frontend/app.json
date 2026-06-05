@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "hashratecloudminer",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "description": "Hashrate Cloud Miner — Non-custodial Bitcoin yield-tracking dashboard. Track indicative earnings, boost virtual hashpower, and withdraw to your own Lightning Network address. No on-device mining.",
     "primaryColor": "#00FFA3",
     "ios": {

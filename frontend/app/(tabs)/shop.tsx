@@ -55,7 +55,7 @@ export default function Store() {
       }
       if (cs.status === 'fulfilled') setCrossSell(cs.value);
       if (e.status === 'fulfilled') setEarnings(e.value);
-      setConsumed(user?.purchased_sku_bonuses || []);
+      setConsumed((user as any)?.purchased_sku_bonuses || []);
     } catch {}
   }, [user]);
 
