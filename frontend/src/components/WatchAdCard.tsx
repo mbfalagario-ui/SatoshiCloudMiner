@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/utils/api';
@@ -18,7 +18,7 @@ type Status = {
 export default function WatchAdCard({ onClaim }: { onClaim?: () => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
-  const { showRewarded } = useAds();
+  const { showRewarded, isRewardedLoaded } = useAds();
 
   const load = useCallback(async () => {
     try {
@@ -33,12 +33,27 @@ export default function WatchAdCard({ onClaim }: { onClaim?: () => void }) {
       Alert.alert('All caught up!', 'You’ve watched all rewarded ads available today. New ads tomorrow.');
       return;
     }
+    if (!isRewardedLoaded) {
+      Alert.alert(
+        'Ad not ready',
+        'The ad is still loading — please try again in a few seconds.',
+      );
+      return;
+    }
     setBusy(true);
     try {
-      // Show real AdMob rewarded video when available, otherwise simulate.
-      try {
-        await showRewarded?.('home-watch-ad');
-      } catch {}
+      // Apple Guideline 2.1(a): this MUST trigger a real Google AdMob
+      // rewarded video. `showRewarded` is wired to RewardedAd.show()
+      // in src/utils/ads.ts. Resolves true if the user watched the ad
+      // to completion (EARNED_REWARD fired), false if they closed early.
+      const earned = await showRewarded('home-watch-ad');
+      if (!earned) {
+        // User closed without earning — do NOT credit. Silent exit.
+        return;
+      }
+      // User earned: credit the boost server-side. AdMob's SSV callback
+      // will also hit /api/ads/ssv_callback in parallel for backend
+      // cryptographic verification (defence-in-depth).
       const r = await api('/ads/claim_dev', { method: 'POST' });
       await load();
       onClaim?.();
@@ -56,6 +71,16 @@ export default function WatchAdCard({ onClaim }: { onClaim?: () => void }) {
   if (!status) return null;
   const left = status.remaining_today;
   const next = status.next_reward_ghs;
+  const noneLeft = left <= 0;
+  const adNotReady = !isRewardedLoaded && !noneLeft;
+  const buttonLabel = busy
+    ? '…'
+    : noneLeft
+    ? 'Done'
+    : adNotReady
+    ? 'Loading…'
+    : 'Watch';
+  const buttonDisabled = busy || noneLeft || adNotReady;
 
   return (
     <View style={styles.wrap}>
@@ -80,11 +105,16 @@ export default function WatchAdCard({ onClaim }: { onClaim?: () => void }) {
           </View>
           <TouchableOpacity
             onPress={onWatch}
-            disabled={busy || left <= 0}
-            style={[styles.btn, left <= 0 && styles.btnMuted]}
+            disabled={buttonDisabled}
+            style={[
+              styles.btn,
+              (noneLeft || adNotReady) && styles.btnMuted,
+            ]}
             testID="watch-ad-btn"
           >
-            <Text style={styles.btnText}>{busy ? '...' : left <= 0 ? 'Done' : 'Watch'}</Text>
+            <Text style={[styles.btnText, (noneLeft || adNotReady) && styles.btnTextMuted]}>
+              {buttonLabel}
+            </Text>
           </TouchableOpacity>
         </View>
       </LinearGradient>
@@ -108,7 +138,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 10,
     borderRadius: 14,
     backgroundColor: colors.secondary,
+    minWidth: 72,
+    alignItems: 'center',
   },
   btnMuted: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSoft },
   btnText: { color: '#0B0E14', fontSize: 13, fontWeight: '800' },
+  btnTextMuted: { color: colors.textTertiary },
 });

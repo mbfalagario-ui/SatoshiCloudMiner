@@ -22,7 +22,8 @@
       "autoIncrement": true,
       "credentialsSource": "local",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://ios-clone-platform.preview.emergentagent.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://ios-clone-platform.preview.emergentagent.com",
+        "EXPO_PUBLIC_ADMOB_REWARDED_IOS": "ca-app-pub-6035003811280283/1502046287"
       },
       "ios": {
         "resourceClass": "m-medium"
@@ -31,7 +32,8 @@
     "production-prod-domain": {
       "extends": "production",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://api.hashratecloudminer.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.hashratecloudminer.com",
+        "EXPO_PUBLIC_ADMOB_REWARDED_IOS": "ca-app-pub-6035003811280283/1502046287"
       }
     }
   },
