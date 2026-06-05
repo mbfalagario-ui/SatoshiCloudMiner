@@ -51,14 +51,23 @@ const IS_IOS = Platform.OS === 'ios';
 const TEST_REWARDED_IOS = 'ca-app-pub-3940256099942544/1712485313';
 const TEST_INTERSTITIAL_IOS = 'ca-app-pub-3940256099942544/4411468910';
 
-// Production iOS rewarded unit (from AdMob console, owned by
-// pastrypuffz / Michael Falagario). When/if an interstitial unit is
-// provisioned, swap PROD_INTERSTITIAL_IOS to its value.
+// Production iOS rewarded unit. Overridden by EXPO_PUBLIC_ADMOB_REWARDED_IOS
+// in `eas.json` per build profile. During Apple App Review and pre-launch
+// testing we deliberately ship Google's test ad unit IDs (per Google's
+// official pre-launch guidance) so the SDK is guaranteed to fill on any
+// device, bypassing the documented 24-72h AdMob warm-up window for brand-
+// new apps. After Apple approval, the env var is swapped back to the prod
+// unit ID (ca-app-pub-6035003811280283/1502046287) and a fresh build ships.
 const PROD_REWARDED_IOS =
-  process.env.EXPO_PUBLIC_ADMOB_REWARDED_IOS ||
-  'ca-app-pub-6035003811280283/1502046287';
+  process.env.EXPO_PUBLIC_ADMOB_REWARDED_IOS || TEST_REWARDED_IOS;
 const PROD_INTERSTITIAL_IOS =
   process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_IOS || TEST_INTERSTITIAL_IOS;
+
+// Max ms the SDK is given to load an ad before we surface a user-visible
+// error instead of leaving the Watch button stuck on "Loading…".
+const AD_LOAD_TIMEOUT_MS = Number(
+  process.env.EXPO_PUBLIC_AD_LOAD_TIMEOUT_MS || 15000,
+);
 
 function rewardedUnitId(): string {
   if (!IS_IOS) return TEST_REWARDED_IOS;
@@ -159,7 +168,7 @@ export async function initAds(): Promise<void> {
   _interstitial.start();
 }
 
-type LoadListener = (loaded: boolean) => void;
+type LoadListener = (loaded: boolean, errorMsg: string | null) => void;
 
 class RewardedManager {
   private unitId: string;
@@ -169,6 +178,8 @@ class RewardedManager {
   private listeners = new Set<LoadListener>();
   private _loaded = false;
   private _showing = false;
+  private _lastError: string | null = null;
+  private _loadTimer: any = null;
   private earnedHandler: ((reward: any) => void) | null = null;
   private closedHandler: (() => void) | null = null;
 
@@ -179,6 +190,9 @@ class RewardedManager {
 
   get loaded(): boolean {
     return this._loaded;
+  }
+  get lastError(): string | null {
+    return this._lastError;
   }
 
   start(): void {
@@ -191,15 +205,35 @@ class RewardedManager {
     const { RewardedAd, AdEventType, RewardedAdEventType } = sdk;
 
     this.cleanup();
+    this._lastError = null;
 
     const ad = RewardedAd.createForAdRequest(this.unitId, {
       requestNonPersonalizedAdsOnly: this.nonPersonalized,
     });
     this.ad = ad;
 
+    // Guard against the load() call never resolving (Google's docs allow
+    // up to 30s+ in some cases). After AD_LOAD_TIMEOUT_MS we surface a
+    // user-visible error so the Watch button doesn't sit on "Loading…"
+    // forever. Cleared by LOADED, CLOSED, or ERROR.
+    this._loadTimer = setTimeout(() => {
+      if (!this._loaded) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[ads] rewarded load TIMEOUT after ${AD_LOAD_TIMEOUT_MS}ms — surfacing UI error`,
+        );
+        this._lastError = 'Ad service unavailable. Please try again later.';
+        this.emit();
+        // Still retry in the background — don't permanently give up.
+        setTimeout(() => this.createAndLoad(), 10_000);
+      }
+    }, AD_LOAD_TIMEOUT_MS);
+
     this.subs.push(
       ad.addAdEventListener(AdEventType.LOADED, () => {
         this._loaded = true;
+        this._lastError = null;
+        this.clearLoadTimer();
         this.emit();
         // eslint-disable-next-line no-console
         console.log('[ads] rewarded LOADED');
@@ -207,13 +241,23 @@ class RewardedManager {
     );
     this.subs.push(
       ad.addAdEventListener(AdEventType.ERROR, (err: any) => {
+        const msg = (err?.message as string) ?? String(err);
         // eslint-disable-next-line no-console
-        console.warn('[ads] rewarded ERROR:', err?.message ?? err);
+        console.warn('[ads] rewarded ERROR:', msg);
         this._loaded = false;
         this._showing = false;
+        // Map known AdMob error codes to friendlier text.
+        if (/no.fill/i.test(msg) || /no_fill/i.test(msg)) {
+          this._lastError = 'No ads available right now. Try again soon.';
+        } else if (/network/i.test(msg)) {
+          this._lastError = 'Network issue — check your connection and retry.';
+        } else {
+          this._lastError = 'Ad service unavailable. Please try again later.';
+        }
+        this.clearLoadTimer();
         this.emit();
         // Back off and retry — common during sandbox "no fill" windows.
-        setTimeout(() => this.createAndLoad(), 5000);
+        setTimeout(() => this.createAndLoad(), 8_000);
       }),
     );
     this.subs.push(
@@ -230,6 +274,8 @@ class RewardedManager {
         console.log('[ads] rewarded CLOSED — reloading next');
         this._loaded = false;
         this._showing = false;
+        this._lastError = null;
+        this.clearLoadTimer();
         this.emit();
         this.closedHandler?.();
         this.closedHandler = null;
@@ -245,7 +291,15 @@ class RewardedManager {
     }
   }
 
+  private clearLoadTimer(): void {
+    if (this._loadTimer) {
+      clearTimeout(this._loadTimer);
+      this._loadTimer = null;
+    }
+  }
+
   private cleanup(): void {
+    this.clearLoadTimer();
     for (const u of this.subs) {
       try { u(); } catch {}
     }
@@ -257,7 +311,7 @@ class RewardedManager {
    *  immediately with the current state. */
   subscribe(cb: LoadListener): () => void {
     this.listeners.add(cb);
-    cb(this._loaded);
+    cb(this._loaded, this._lastError);
     return () => {
       this.listeners.delete(cb);
     };
@@ -265,7 +319,7 @@ class RewardedManager {
 
   private emit(): void {
     for (const cb of this.listeners) {
-      try { cb(this._loaded); } catch {}
+      try { cb(this._loaded, this._lastError); } catch {}
     }
   }
 
@@ -389,22 +443,20 @@ export function getInterstitialManager(): InterstitialManager | null {
   return _interstitial;
 }
 
-/** Convenience used by AdContext: subscribe to rewarded load-state. */
+/** Convenience used by AdContext: subscribe to rewarded load-state.
+ *  Callback fires with (loaded, errorMsg). */
 export function subscribeRewardedLoaded(cb: LoadListener): () => void {
   if (!_rewarded) {
-    // Manager not yet up. Immediately tell caller `false`, and wait for
-    // initAds to create the manager. We poll briefly so consumers don't
-    // need to re-subscribe.
-    cb(false);
+    // Manager not yet up. Immediately tell caller `false, null`, and wait
+    // for initAds to create the manager. We poll briefly so consumers
+    // don't need to re-subscribe.
+    cb(false, null);
     let cancelled = false;
     const t = setInterval(() => {
       if (cancelled) return;
       if (_rewarded) {
         clearInterval(t);
-        // Wire through to the real manager
         const unsub = _rewarded.subscribe(cb);
-        // Replace the cancel function so the outer caller can cancel
-        // through the same handle.
         (cancelFn as any).inner = unsub;
       }
     }, 250);

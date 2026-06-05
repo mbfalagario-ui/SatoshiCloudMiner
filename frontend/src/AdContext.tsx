@@ -41,6 +41,8 @@ type Ctx = {
   adFree: boolean;
   /** True when a rewarded ad is loaded and ready to show right now. */
   isRewardedLoaded: boolean;
+  /** Last load/error message from the rewarded ad SDK; null if no error. */
+  rewardedError: string | null;
   /** Show an interstitial. Never blocks UI; resolves immediately if not loaded. */
   showInterstitial: (reason?: string) => Promise<void>;
   /** Show a rewarded ad. Resolves `true` if user earned the reward, `false` if cancelled. */
@@ -54,6 +56,7 @@ const MIN_INTERSTITIAL_GAP_MS = 35_000;  // never more than once every 35s
 export function AdProvider({ children }: { children: React.ReactNode }) {
   const { user } = useSession();
   const [isRewardedLoaded, setIsRewardedLoaded] = useState(false);
+  const [rewardedError, setRewardedError] = useState<string | null>(null);
   const lastInterstitialRef = useRef<number>(0);
 
   const adFree = !!user?.ad_free;
@@ -69,7 +72,10 @@ export function AdProvider({ children }: { children: React.ReactNode }) {
 
   // 2. Track rewarded ad load-state so the Watch button can be gated.
   useEffect(() => {
-    const unsub = subscribeRewardedLoaded(setIsRewardedLoaded);
+    const unsub = subscribeRewardedLoaded((loaded, err) => {
+      setIsRewardedLoaded(loaded);
+      setRewardedError(err);
+    });
     return () => { unsub(); };
   }, []);
 
@@ -99,8 +105,8 @@ export function AdProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ adFree, isRewardedLoaded, showInterstitial, showRewarded }),
-    [adFree, isRewardedLoaded, showInterstitial, showRewarded],
+    () => ({ adFree, isRewardedLoaded, rewardedError, showInterstitial, showRewarded }),
+    [adFree, isRewardedLoaded, rewardedError, showInterstitial, showRewarded],
   );
 
   return <AdContext.Provider value={value}>{children}</AdContext.Provider>;
@@ -112,6 +118,7 @@ export function useAds(): Ctx {
     return {
       adFree: true,
       isRewardedLoaded: false,
+      rewardedError: null,
       showInterstitial: async () => {},
       showRewarded: async () => true,
     };

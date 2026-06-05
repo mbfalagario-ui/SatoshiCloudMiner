@@ -18,7 +18,7 @@ type Status = {
 export default function WatchAdCard({ onClaim }: { onClaim?: () => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
-  const { showRewarded, isRewardedLoaded } = useAds();
+  const { showRewarded, isRewardedLoaded, rewardedError } = useAds();
 
   const load = useCallback(async () => {
     try {
@@ -35,8 +35,10 @@ export default function WatchAdCard({ onClaim }: { onClaim?: () => void }) {
     }
     if (!isRewardedLoaded) {
       Alert.alert(
-        'Ad not ready',
-        'The ad is still loading — please try again in a few seconds.',
+        rewardedError ? 'Ad service unavailable' : 'Ad not ready',
+        rewardedError
+          ? rewardedError + ' The next ad is being requested in the background.'
+          : 'The ad is still loading — please try again in a few seconds.',
       );
       return;
     }
@@ -72,11 +74,14 @@ export default function WatchAdCard({ onClaim }: { onClaim?: () => void }) {
   const left = status.remaining_today;
   const next = status.next_reward_ghs;
   const noneLeft = left <= 0;
-  const adNotReady = !isRewardedLoaded && !noneLeft;
+  const hasError = !!rewardedError && !isRewardedLoaded;
+  const adNotReady = !isRewardedLoaded && !noneLeft && !hasError;
   const buttonLabel = busy
     ? '…'
     : noneLeft
     ? 'Done'
+    : hasError
+    ? 'Retry'
     : adNotReady
     ? 'Loading…'
     : 'Watch';
