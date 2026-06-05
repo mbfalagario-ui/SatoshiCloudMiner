@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Request, Header
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Request, Header, Body
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
@@ -1924,6 +1924,52 @@ async def admob_ssv_callback(request: Request):
     }
 
 
+@api.post("/telemetry/crash")
+async def telemetry_crash(rec: Dict[str, Any] = Body(...)):
+    """Receive a JS crash report from a client and store it for inspection.
+
+    Build #33 introduced a JS-side global error handler that captures all
+    uncaught JS exceptions + unhandled Promise rejections and POSTs them
+    here. Each record contains the message, stack, app/build version,
+    and platform/OS. No auth required — anyone reporting their own crash
+    is fine, and we want this path to work even when sign-in is broken.
+    Records persist in MongoDB and are retrievable by admins via
+    `/api/admin/telemetry/crashes`.
+    """
+    try:
+        doc = {
+            "id": str(uuid.uuid4()),
+            "received_at": now_utc().isoformat(),
+            "ts": str(rec.get("ts", ""))[:60],
+            "type": str(rec.get("type", "unknown"))[:40],
+            "fatal": bool(rec.get("fatal", False)),
+            "message": str(rec.get("message", ""))[:4000],
+            "stack": str(rec.get("stack", ""))[:20000],
+            "app_version": str(rec.get("app_version", ""))[:30],
+            "build_number": str(rec.get("build_number", ""))[:30],
+            "platform": str(rec.get("platform", ""))[:30],
+            "os_version": str(rec.get("os_version", ""))[:30],
+        }
+        await db.crash_reports.insert_one(doc)
+        return {"ok": True, "id": doc["id"]}
+    except Exception as e:
+        logger.warning("telemetry/crash insert failed: %s", e)
+        return {"ok": False}
+
+
+@api.get("/admin/telemetry/crashes")
+async def admin_telemetry_crashes(
+    limit: int = 50,
+    current_user: Dict[str, Any] = Depends(get_current_admin),
+):
+    cur = db.crash_reports.find({}).sort("received_at", -1).limit(min(limit, 200))
+    out = []
+    async for d in cur:
+        d.pop("_id", None)
+        out.append(d)
+    return {"crashes": out, "total": len(out)}
+
+
 @api.post("/ads/claim_dev")
 async def ads_claim_dev(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Dev/Test endpoint — manually credit a rewarded-ad reward.
@@ -3499,6 +3545,13 @@ async def startup():
 
     # Seed the admin account (idempotent).
     await _ensure_admin_user()
+
+    # Seed the App Review reviewer accounts (idempotent). Critical for
+    # Apple's reviewer to be able to sign in — Build #28-#32 nearly hit
+    # a 2.1 rejection because `appreview1` had been wiped from the prod
+    # DB. This function re-creates / re-passwords all three on every
+    # startup so the drift can't silently happen again.
+    await _ensure_reviewer_accounts()
 
     # Seed FAQs
     try:
