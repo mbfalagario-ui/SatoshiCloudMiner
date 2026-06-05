@@ -50,10 +50,15 @@
       "react-native-iap",
       "expo-font",
       [
+        "expo-tracking-transparency",
+        {
+          "userTrackingPermission": "Used to show rewarded ads that fund free hashpower boosts."
+        }
+      ],
+      [
         "react-native-google-mobile-ads",
         {
           "iosAppId": "ca-app-pub-6035003811280283~6151737735",
-          "userTrackingUsageDescription": "Used to show rewarded ads that fund free hashpower boosts.",
           "skAdNetworkItems": [
             "cstr6suwn9.skadnetwork",
             "4fzdc2evr5.skadnetwork",

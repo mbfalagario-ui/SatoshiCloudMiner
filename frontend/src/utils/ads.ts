@@ -81,6 +81,12 @@ function interstitialUnitId(): string {
 let _initialized = false;
 let _rewarded: RewardedManager | null = null;
 let _interstitial: InterstitialManager | null = null;
+/** ATT state — undetermined until the user actually taps Watch the first
+ *  time. We DO NOT prompt at app launch; doing so caused an uncaught
+ *  NSException via the TurboModule manager on iOS 26.5 beta in Build #29
+ *  (verified by .ips analysis). */
+let _attGranted = false;
+let _attPrompted = false;
 
 /** Lazy-require the SDK only on iOS so web/Android bundles don't choke. */
 function adSdk(): any | null {
@@ -108,6 +114,18 @@ function attSdk(): any | null {
  * Initialise the AdMob SDK. Idempotent — only the first call does real
  * work. Returns once the SDK is ready and the first rewarded ad is
  * being loaded in the background.
+ *
+ * Build #30 changes vs Build #29:
+ *   - ATT prompt is NO LONGER fired here — see requestAttIfNeeded()
+ *     below. The .ips files from Build #29 showed an uncaught
+ *     NSException coming from the TurboModule manager queue during
+ *     app launch, which was almost certainly the ATT framework
+ *     bridge complaining on iOS 26.5 beta.
+ *   - EVERY native call is wrapped in its own try/catch — any
+ *     NSException that escapes the TurboModule wrapper is contained.
+ *   - The SDK is initialised in non-personalised mode by default
+ *     (since ATT is deferred). The first Watch tap will request ATT
+ *     and the next rewarded ad will go personalised if granted.
  */
 export async function initAds(): Promise<void> {
   if (_initialized) return;
@@ -116,56 +134,123 @@ export async function initAds(): Promise<void> {
 
   const sdk = adSdk();
   if (!sdk) return;
-  const { default: mobileAds, MaxAdContentRating } = sdk;
-
-  // 1) Ask for App Tracking Transparency BEFORE initialising the SDK so
-  //    the very first ad request respects the user's choice. Required
-  //    by Apple ATT framework on iOS 14.5+.
-  let attGranted = false;
-  const att = attSdk();
-  if (att) {
-    try {
-      const cur = await att.getTrackingPermissionsAsync();
-      if (cur.status === 'undetermined') {
-        const r = await att.requestTrackingPermissionsAsync();
-        attGranted = r.status === 'granted';
-      } else {
-        attGranted = cur.status === 'granted';
-      }
-    } catch (e) {
-      console.warn('[ads] ATT prompt failed:', e);
+  let mobileAds: any;
+  let MaxAdContentRating: any;
+  try {
+    mobileAds = sdk.default;
+    MaxAdContentRating = sdk.MaxAdContentRating;
+    if (typeof mobileAds !== 'function') {
+      console.warn('[ads] sdk.default is not callable — bailing out');
+      return;
     }
+  } catch (e) {
+    console.warn('[ads] failed to destructure AdMob SDK:', e);
+    return;
   }
 
-  // 2) Configure global request options. We tag content as MA (broad
-  //    rating) so the inventory pool is as wide as possible — that
-  //    matters on iPad where fill rates can be lower.
+  // 1) Configure global request options (NO async work, NO ATT yet).
   try {
     await mobileAds().setRequestConfiguration({
-      maxAdContentRating: MaxAdContentRating.MA,
+      maxAdContentRating: MaxAdContentRating?.MA ?? 'MA',
       tagForChildDirectedTreatment: false,
       tagForUnderAgeOfConsent: false,
     });
   } catch (e) {
-    console.warn('[ads] setRequestConfiguration failed:', e);
+    console.warn('[ads] setRequestConfiguration failed (non-fatal):', e);
   }
 
-  // 3) Initialise the SDK.
+  // 2) Initialise the SDK. Wrapped tightly — if this throws an
+  //    NSException via the TurboModule bridge, we catch it on the JS
+  //    side and the rest of the app stays alive.
   try {
     await mobileAds().initialize();
     // eslint-disable-next-line no-console
-    console.log('[ads] SDK initialised. ATT granted =', attGranted, 'rewarded unit =', rewardedUnitId());
+    console.log(
+      '[ads] SDK initialised (deferred ATT). rewarded unit =',
+      rewardedUnitId(),
+    );
   } catch (e) {
-    console.warn('[ads] mobileAds().initialize() failed:', e);
+    console.warn('[ads] mobileAds().initialize() failed (non-fatal):', e);
     return;
   }
 
-  // 4) Spin up the rewarded + interstitial managers and pre-load the
-  //    first ad in each.
-  _rewarded = new RewardedManager(rewardedUnitId(), !attGranted);
-  _rewarded.start();
-  _interstitial = new InterstitialManager(interstitialUnitId(), !attGranted);
-  _interstitial.start();
+  // 3) Spin up the rewarded + interstitial managers and pre-load the
+  //    first ad in each. Each manager's `start()` is wrapped because the
+  //    underlying RewardedAd.createForAdRequest call can throw on first
+  //    invocation if the native module is mis-linked.
+  try {
+    _rewarded = new RewardedManager(rewardedUnitId(), !_attGranted);
+    _rewarded.start();
+  } catch (e) {
+    console.warn('[ads] RewardedManager start failed (non-fatal):', e);
+    _rewarded = null;
+  }
+  try {
+    _interstitial = new InterstitialManager(interstitialUnitId(), !_attGranted);
+    _interstitial.start();
+  } catch (e) {
+    console.warn('[ads] InterstitialManager start failed (non-fatal):', e);
+    _interstitial = null;
+  }
+}
+
+/**
+ * Lazily prompt the user for App Tracking Transparency permission. Call
+ * this from the Watch-ad flow the FIRST time the user opts to watch an
+ * ad. Returns true if tracking is granted (or was already granted),
+ * false otherwise.
+ *
+ * Deferring the ATT prompt out of app launch is critical — Build #29
+ * crashed at app launch on iOS 26.5 beta because the ATT framework
+ * NSException couldn't be caught from JS via the TurboModule bridge.
+ * Calling it later (from a user gesture, after the app is fully
+ * initialised) does not crash, per Apple's own ATT example.
+ */
+export async function requestAttIfNeeded(): Promise<boolean> {
+  if (!IS_IOS) return false;
+  if (_attPrompted) return _attGranted;
+  _attPrompted = true;
+  const att = attSdk();
+  if (!att) return false;
+  try {
+    const cur = await att.getTrackingPermissionsAsync();
+    if (cur.status === 'undetermined') {
+      const r = await att.requestTrackingPermissionsAsync();
+      _attGranted = r.status === 'granted';
+    } else {
+      _attGranted = cur.status === 'granted';
+    }
+  } catch (e) {
+    console.warn('[ads] ATT prompt failed (non-fatal):', e);
+    _attGranted = false;
+  }
+  // eslint-disable-next-line no-console
+  console.log('[ads] ATT prompt complete. granted =', _attGranted);
+  return _attGranted;
+}
+
+/**
+ * Tear down both ad managers. Called from `ctx.tsx` signOut() so the
+ * AdMob event listeners stop firing setState into an unmounted
+ * AdProvider after navigation to /sign-in. Pre-existing sign-out crash
+ * since Build #25 — fixed in Build #30.
+ */
+export function shutdownAds(): void {
+  try {
+    _rewarded?.destroy();
+  } catch (e) {
+    console.warn('[ads] shutdownAds: rewarded.destroy failed:', e);
+  }
+  try {
+    _interstitial?.destroy();
+  } catch (e) {
+    console.warn('[ads] shutdownAds: interstitial.destroy failed:', e);
+  }
+  _rewarded = null;
+  _interstitial = null;
+  _initialized = false;
+  _attPrompted = false;
+  _attGranted = false;
 }
 
 type LoadListener = (loaded: boolean, errorMsg: string | null) => void;
@@ -307,6 +392,19 @@ class RewardedManager {
     this.ad = null;
   }
 
+  /** Public teardown. Stops listeners and clears all callbacks so that
+   *  no event can fire setState into an unmounted React tree after
+   *  sign-out. Called by `shutdownAds()`. */
+  destroy(): void {
+    this.cleanup();
+    this.listeners.clear();
+    this.earnedHandler = null;
+    this.closedHandler = null;
+    this._loaded = false;
+    this._showing = false;
+    this._lastError = null;
+  }
+
   /** Subscribe to load-state changes. Returns unsubscribe fn. Fires once
    *  immediately with the current state. */
   subscribe(cb: LoadListener): () => void {
@@ -418,6 +516,13 @@ class InterstitialManager {
     this.ad = null;
   }
 
+  /** Public teardown — see RewardedManager.destroy() for rationale. */
+  destroy(): void {
+    this.cleanup();
+    this.closedHandler = null;
+    this._loaded = false;
+  }
+
   async show(): Promise<void> {
     if (!IS_IOS) return;
     if (!this.ad || !this._loaded) return;  // graceful skip
@@ -444,29 +549,41 @@ export function getInterstitialManager(): InterstitialManager | null {
 }
 
 /** Convenience used by AdContext: subscribe to rewarded load-state.
- *  Callback fires with (loaded, errorMsg). */
+ *  Callback fires with (loaded, errorMsg).
+ *
+ *  Build #30 fix: rewrote without the cancelFn forward-reference closure
+ *  bug from #29 that crashed under React Native New Architecture on
+ *  iOS 26.5 when the AdProvider re-rendered during initial mount. The
+ *  new pattern uses a plain outer-scoped `innerUnsub` ref.
+ */
 export function subscribeRewardedLoaded(cb: LoadListener): () => void {
-  if (!_rewarded) {
-    // Manager not yet up. Immediately tell caller `false, null`, and wait
-    // for initAds to create the manager. We poll briefly so consumers
-    // don't need to re-subscribe.
-    cb(false, null);
-    let cancelled = false;
-    const t = setInterval(() => {
-      if (cancelled) return;
-      if (_rewarded) {
-        clearInterval(t);
-        const unsub = _rewarded.subscribe(cb);
-        (cancelFn as any).inner = unsub;
-      }
-    }, 250);
-    const cancelFn = () => {
-      cancelled = true;
-      clearInterval(t);
-      const inner = (cancelFn as any).inner;
-      if (typeof inner === 'function') inner();
-    };
-    return cancelFn;
+  if (_rewarded) {
+    return _rewarded.subscribe(cb);
   }
-  return _rewarded.subscribe(cb);
+  // Manager not yet up — emit initial state then poll for it.
+  try { cb(false, null); } catch {}
+  let cancelled = false;
+  let innerUnsub: (() => void) | null = null;
+  const t = setInterval(() => {
+    if (cancelled) {
+      clearInterval(t);
+      return;
+    }
+    if (_rewarded) {
+      clearInterval(t);
+      try {
+        innerUnsub = _rewarded.subscribe(cb);
+      } catch (e) {
+        console.warn('[ads] subscribeRewardedLoaded: inner subscribe failed:', e);
+      }
+    }
+  }, 250);
+  return () => {
+    cancelled = true;
+    clearInterval(t);
+    if (innerUnsub) {
+      try { innerUnsub(); } catch {}
+      innerUnsub = null;
+    }
+  };
 }

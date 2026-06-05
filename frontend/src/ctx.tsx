@@ -115,6 +115,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // iap module may not be loaded on every platform
     }
 
+    // Build #30: tear down AdMob managers too. Pre-existing bug since
+    // Build #25 — without this, the rewarded/interstitial event
+    // listeners stay alive after sign-out and crash the app when they
+    // try to fire setState into the unmounted AdProvider after the
+    // user lands on /sign-in. Verified against the 6 sign-out crash
+    // reports from May 26 and June 5.
+    try {
+      const adsMod = await import('@/src/utils/ads');
+      if (typeof adsMod.shutdownAds === 'function') {
+        adsMod.shutdownAds();
+      }
+    } catch {
+      // ads module may not be loaded on every platform
+    }
+
     // Clear the SecureStore token. From this point any /api/* call will 401.
     try {
       await clearToken();

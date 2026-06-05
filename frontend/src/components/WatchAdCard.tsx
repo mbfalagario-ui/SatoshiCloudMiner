@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/utils/api';
 import { colors, radius, spacing, fonts, fmtGhs } from '@/src/utils/theme';
 import { useAds } from '@/src/AdContext';
+import { requestAttIfNeeded } from '@/src/utils/ads';
 
 type Status = {
   ads_today: number;
@@ -44,6 +45,14 @@ export default function WatchAdCard({ onClaim }: { onClaim?: () => void }) {
     }
     setBusy(true);
     try {
+      // First-tap ATT prompt. Deferring out of app-launch (where it
+      // crashed Build #29 on iOS 26.5) into a user gesture is Apple's
+      // own recommended pattern. Subsequent calls are no-ops.
+      try {
+        await requestAttIfNeeded();
+      } catch {
+        // ATT failures are non-fatal — we can still serve non-personalised ads.
+      }
       // Apple Guideline 2.1(a): this MUST trigger a real Google AdMob
       // rewarded video. `showRewarded` is wired to RewardedAd.show()
       // in src/utils/ads.ts. Resolves true if the user watched the ad
