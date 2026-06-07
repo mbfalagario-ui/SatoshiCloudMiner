@@ -116,56 +116,56 @@ the dashboard is interactive eliminates both vectors.
 > **Reviewer login**
 > Email: appreview1@hashratecloudminer.app
 > Password: AppReview2026!
-> The account is pre-configured and active. No email verification, phone
-> verification, invite code, or CAPTCHA is required.
+> The account is pre-configured and active. No email or phone verification,
+> invite code, or CAPTCHA is required.
 >
-> **About this update (Build 33 / version 1.0.3)**
-> This build addresses the post-login crash you reported on iPad Air M3
-> running iPadOS 26.5 under Guideline 2.1(a). Three concrete changes:
+> **About this update (version 1.0.3)**
+> This update fixes the post-login stability issue you reported on iPad
+> running iPadOS 26.5 (Guideline 2.1(a)). Three changes:
 >
-> 1. The binary is now **iPhone-only** (`ios.supportsTablet: false`).
->    The iPad code path that crashed is no longer reachable.
-> 2. Google Mobile Ads SDK initialisation is now deferred to **3.5 s
->    after the dashboard is fully interactive**, no longer at app launch.
->    If the ad SDK fails or hangs, the dashboard remains usable.
-> 3. All post-login network calls (earnings, store cross-sell, ticker)
->    now have a hard 12 s timeout and surface a visible "Retry" button
->    on failure — no more endless spinners.
+> 1. The binary is now **iPhone-only** (`UIDeviceFamily = [1]`). The code
+>    path that previously crashed on iPad is no longer reachable.
+> 2. All third-party SDK initialisation has been deferred to **after** the
+>    home screen finishes loading. If any SDK fails or hangs, the app
+>    remains fully usable.
+> 3. All network calls during launch now have a hard 12-second timeout
+>    and surface a visible "Retry" button on failure. No more endless
+>    spinners.
 >
-> **About the product**
-> Hashrate Cloud Miner is a Bitcoin yield-tracking dashboard. **All
-> mining computation is performed off-device by our cloud infrastructure.
-> The app does NOT use the iPhone CPU or GPU to mine cryptocurrency** —
-> there is no on-device mining code, no background mining task, and no
-> CPU/GPU-intensive work triggered by app launch, login, ads, or
-> background execution. The "hashrate" you see in the dashboard reflects
-> your share of cloud capacity, and the displayed earnings are
-> **indicative — they are not guaranteed**. Actual payouts vary with
-> BTC price, network difficulty, pool performance, platform maintenance
-> fees, and other operational factors.
+> **About the app**
+> Hashrate Cloud Miner is a non-custodial dashboard for monitoring an
+> account on a cloud hashrate service. **All computation is performed
+> off-device by our cloud infrastructure. The app does not perform any
+> mining on iPhone hardware**, does not run background mining tasks,
+> and does not place any CPU/GPU-intensive workload on the device at
+> any point — including at app launch, login, ad playback, or
+> background execution.
+>
+> Earnings shown in the app are **indicative, not guaranteed**, and may
+> vary based on network conditions, platform maintenance fees, and
+> service availability. The relevant disclosures are surfaced in the
+> Home screen footer, the Shop screen, and the Profile → Legal section
+> (Privacy Policy and Terms).
 >
 > **What to test (≤ 5 minutes)**
-> 1. Cold-launch the app → land on Sign-In.
-> 2. Sign in with the credentials above → land on the Home dashboard.
+> 1. Cold-launch the app → land on the Sign-In screen.
+> 2. Sign in with the credentials above → land on Home.
 > 3. Idle for ≥ 3 minutes on Home → no crash, no freeze.
 > 4. Navigate Home → Shop → Wallet → Profile → Home → no crash.
-> 5. Tap "Buy" on any package in Shop → the StoreKit sheet appears.
->    (Sandbox purchases are not actually charged.)
-> 6. On Home, tap the "Watch ad" card → the rewarded ad plays.
+> 5. Tap "Buy" on any item in Shop → the StoreKit sheet appears
+>    (sandbox transactions are not actually charged).
 >
-> **Where to find disclosures**
-> • Home screen footer: "Earnings are indicative and depend on real
->   network hashrate."
-> • Shop screen footer: per-pack fee + maintenance terms.
-> • Profile → Privacy Policy (https://hashratecloudminer.com/privacy)
-> • Profile → Terms of Service
-> • Profile → Delete Account (in-app account deletion).
+> **Account control**
+> The Profile screen contains in-app links to the Privacy Policy and
+> Terms, plus a "Delete Account" option that completes the deletion
+> request inside the app.
 >
-> **IAP**
-> All packages are non-subscription consumables. Validation runs against
-> Apple's App Store Server API; transactions that fail validation are
-> refused (HTTP 402) and no entitlement is granted. The "Restore
-> Purchases" button is on the Shop screen.
+> **In-App Purchases**
+> All packages are non-subscription consumables. Each transaction is
+> verified against Apple's App Store Server API on our backend before
+> any entitlement is granted; transactions that fail verification are
+> refused with HTTP 402 and no benefit is delivered. A "Restore
+> Purchases" control is on the Shop screen.
 
 ---
 

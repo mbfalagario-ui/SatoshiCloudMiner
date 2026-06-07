@@ -1998,6 +1998,116 @@ async def admin_telemetry_crashes(
     return {"crashes": out, "total": len(out)}
 
 
+@api.get("/admin/iap/selfcheck")
+async def admin_iap_selfcheck(
+    current_user: Dict[str, Any] = Depends(get_current_admin),
+):
+    """Read-only IAP credential health check.
+
+    Returns the resolved Apple ASC configuration WITHOUT exposing secret
+    material, so the operator can verify after a key rotation that:
+      • the `.p8` file is present and readable
+      • the issuer/key/bundle env vars are wired correctly
+      • `APPLE_VERIFY_REQUIRED` is set in production
+      • Apple's API actually accepts the credentials (a single dummy
+        transactionId request — Apple returns 4040010 "not found" on
+        valid auth, 401 on invalid auth, which lets us distinguish
+        "creds OK, no such txn" from "creds broken").
+
+    Never exposes:
+      • the contents of the .p8 file
+      • the issuer/key ID (only their lengths + first/last 2 chars)
+      • any other tokens
+    """
+    from integrations.apple import _load_config  # type: ignore
+
+    def _mask(s: Optional[str]) -> str:
+        if not s:
+            return "(unset)"
+        if len(s) <= 6:
+            return "***"
+        return f"{s[:2]}…{s[-2:]} (len={len(s)})"
+
+    cfg = _load_config()
+    p8_path = cfg.private_key_path
+    p8_exists = False
+    p8_size = 0
+    try:
+        from pathlib import Path
+        p = Path(p8_path) if p8_path else None
+        if p and p.is_file():
+            p8_exists = True
+            p8_size = p.stat().st_size
+    except Exception:
+        pass
+
+    require_real = os.environ.get("APPLE_VERIFY_REQUIRED", "").strip() in ("1", "true", "True", "yes")
+
+    # Try a known-bad but well-formatted transaction ID against Apple to
+    # discriminate which side fails. Apple returns 4040010 (NotFound) when
+    # auth is OK, 401 when auth is bad, 4000006 when the format is invalid.
+    # We pass a 16-digit numeric value (Apple's typical txn id format) so
+    # the response is auth/lookup rather than format validation.
+    apple_round_trip = "skipped"
+    apple_status = None
+    try:
+        from integrations.apple import verify_apple_transaction
+        result = verify_apple_transaction("1000000000000000", expected_product_id=None)
+        # If verify "succeeded" without raising, examine for mock-fallback
+        # which is the silent failure path Apple Section 6 prohibits.
+        if result.get("_mocked"):
+            env_label = str(result.get("environment", "MOCK"))
+            if env_label == "AUTH_FAILED_FALLBACK":
+                apple_round_trip = "creds_INVALID_silent_mock_fallback"
+                apple_status = "bad_creds"
+            else:
+                apple_round_trip = f"creds_missing_silent_mock_fallback ({env_label})"
+                apple_status = "missing"
+        else:
+            apple_round_trip = "unexpected_real_success"
+            apple_status = "ok"
+    except ValueError as e:
+        msg = str(e)
+        if "4040010" in msg or ("transaction" in msg.lower() and "not found" in msg.lower()):
+            apple_round_trip = "creds_valid_txn_not_found"
+            apple_status = "ok"
+        elif "401" in msg or "authentication" in msg.lower() or "Unauthenticated" in msg:
+            apple_round_trip = "creds_INVALID_apple_401"
+            apple_status = "bad_creds"
+        elif "not configured" in msg.lower() or "unreadable" in msg.lower():
+            apple_round_trip = "creds_missing_locally"
+            apple_status = "missing"
+        elif "4000006" in msg or "Invalid transaction" in msg:
+            # Format check happens before auth — implies creds reached Apple.
+            apple_round_trip = "creds_likely_ok_format_rejected"
+            apple_status = "ok"
+        else:
+            apple_round_trip = f"value_error_{msg[:60]}"
+            apple_status = "unknown"
+    except Exception as e:
+        apple_round_trip = f"exception_{type(e).__name__}"
+        apple_status = "unknown"
+
+    return {
+        "enabled": cfg.enabled,
+        "require_real": require_real,
+        "private_key": {
+            "path": p8_path or "(unset)",
+            "exists_on_disk": p8_exists,
+            "size_bytes": p8_size,
+        },
+        "key_id":    _mask(cfg.key_id),
+        "issuer_id": _mask(cfg.issuer_id),
+        "bundle_id": cfg.bundle_id or "(unset)",
+        "environment_override": cfg.environment_override or "(none)",
+        "apple_round_trip": apple_round_trip,
+        "apple_status": apple_status,
+        "ready_for_production": (
+            cfg.enabled and require_real and p8_exists and apple_status == "ok"
+        ),
+    }
+
+
 @api.post("/ads/claim_dev")
 async def ads_claim_dev(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Dev/Test endpoint — manually credit a rewarded-ad reward.
