@@ -16,7 +16,7 @@
 | Replacement version | **1.0.3** |
 | Replacement build | **33** (EAS will auto-increment; `eas.json.production.autoIncrement = true`) |
 | Replacement EAS ID | _to be recorded after `eas build` runs_ |
-| Replacement commit SHA | _to be recorded after `git commit` & push_ |
+| Replacement commit SHA | **`b870be0`** (HEAD as of 2026-06-07 14:46 UTC) |
 
 **Source/binary integrity:** the Git repo HEAD post-remediation matches the IPA submitted as Build #33. There are no out-of-tree patches.
 
