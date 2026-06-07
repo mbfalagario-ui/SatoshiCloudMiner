@@ -3628,6 +3628,44 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def startup():
+    # ─── Apple IAP credentials startup check (fail loudly) ────────────────
+    # Apple Build #34 hardening: log a single CRITICAL line at startup when
+    # APPLE_VERIFY_REQUIRED is on but any of the mandatory Apple secrets is
+    # missing. This appears in Fly's process logs and is the first thing an
+    # operator should see if a secret rotation went sideways. Does NOT crash
+    # the process — the live /api/admin/iap/selfcheck endpoint reports the
+    # same state in detail and IAP verification will already fail-closed.
+    _apple_require_real = os.environ.get("APPLE_VERIFY_REQUIRED", "").strip() in ("1", "true", "True", "yes")
+    if _apple_require_real:
+        _apple_missing = [
+            name for name in (
+                "APPLE_KEY_ID",
+                "APPLE_ISSUER_ID",
+                "APPLE_BUNDLE_ID",
+                "APPLE_PRIVATE_KEY_PEM",
+            )
+            if not os.environ.get(name)
+        ]
+        if _apple_missing:
+            logger.critical(
+                "STARTUP/IAP: APPLE_VERIFY_REQUIRED=1 but mandatory Fly secrets "
+                "are MISSING: %s — all in-app purchases will be refused (HTTP 402) "
+                "until the secrets are set. Configure them at "
+                "https://fly.io/apps/hashrate-cloud-miner-api/secrets",
+                _apple_missing,
+            )
+        else:
+            logger.info(
+                "STARTUP/IAP: APPLE_VERIFY_REQUIRED=1, all 4 mandatory Apple "
+                "secrets present (APPLE_KEY_ID, APPLE_ISSUER_ID, "
+                "APPLE_BUNDLE_ID, APPLE_PRIVATE_KEY_PEM)."
+            )
+    else:
+        logger.warning(
+            "STARTUP/IAP: APPLE_VERIFY_REQUIRED is not set — running in "
+            "permissive/dev mode. Production must set APPLE_VERIFY_REQUIRED=1."
+        )
+
     # Ensure indexes
     try:
         await db.users.create_index("email", unique=True)
