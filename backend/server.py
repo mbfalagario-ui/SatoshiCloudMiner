@@ -2091,10 +2091,12 @@ async def admin_iap_selfcheck(
     return {
         "enabled": cfg.enabled,
         "require_real": require_real,
+        "key_source": cfg.key_source,           # "env:APPLE_PRIVATE_KEY_PEM" or "file:..."
         "private_key": {
             "path": p8_path or "(unset)",
             "exists_on_disk": p8_exists,
             "size_bytes": p8_size,
+            "from_env_var": bool(cfg.private_key_pem),
         },
         "key_id":    _mask(cfg.key_id),
         "issuer_id": _mask(cfg.issuer_id),
@@ -2103,7 +2105,7 @@ async def admin_iap_selfcheck(
         "apple_round_trip": apple_round_trip,
         "apple_status": apple_status,
         "ready_for_production": (
-            cfg.enabled and require_real and p8_exists and apple_status == "ok"
+            cfg.enabled and require_real and apple_status == "ok"
         ),
     }
 

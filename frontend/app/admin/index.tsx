@@ -154,6 +154,7 @@ export default function AdminAnalytics() {
           <QuickBtn icon="chatbubbles" label="Support" badge={supportUnread} onPress={() => router.push('/admin/support' as any)} />
           <QuickBtn icon="analytics" label="Strategist" onPress={() => router.push('/admin/strategist' as any)} />
           <QuickBtn icon="bug" label="Telemetry" onPress={() => router.push('/admin/telemetry' as any)} />
+          <QuickBtn icon="key" label="IAP" onPress={() => router.push('/admin/iap' as any)} />
         </View>
 
         {/* Headline cards */}

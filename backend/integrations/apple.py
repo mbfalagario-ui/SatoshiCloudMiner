@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AppleConfig:
     private_key_path: Optional[str]
+    private_key_pem:  Optional[str]      # NEW: literal PEM body (preferred in prod)
     key_id: Optional[str]
     issuer_id: Optional[str]
     bundle_id: Optional[str]
@@ -33,18 +34,47 @@ class AppleConfig:
 
     @property
     def enabled(self) -> bool:
-        return bool(
-            self.private_key_path
-            and self.key_id
-            and self.issuer_id
-            and self.bundle_id
-            and Path(self.private_key_path).exists()
-        )
+        """Returns True when we have enough credentials to verify against
+        Apple. The key may come from EITHER:
+          - APPLE_PRIVATE_KEY_PEM   (literal PEM body — preferred in prod)
+          - APPLE_PRIVATE_KEY_PATH  (path on disk — dev convenience)
+        and the other three IDs must all be present.
+        """
+        if not (self.key_id and self.issuer_id and self.bundle_id):
+            return False
+        if self.private_key_pem and self.private_key_pem.strip().startswith("-----BEGIN"):
+            return True
+        if self.private_key_path and Path(self.private_key_path).exists():
+            return True
+        return False
+
+    def read_key_bytes(self) -> Optional[bytes]:
+        """Returns the .p8 contents as bytes, sourced from the secure
+        env var if present, else from disk. Returns None if neither is
+        available."""
+        if self.private_key_pem and self.private_key_pem.strip().startswith("-----BEGIN"):
+            return self.private_key_pem.encode("utf-8")
+        if self.private_key_path:
+            try:
+                return Path(self.private_key_path).read_bytes()
+            except Exception:
+                return None
+        return None
+
+    @property
+    def key_source(self) -> str:
+        """Human-readable label for selfcheck reporting (no secret leak)."""
+        if self.private_key_pem and self.private_key_pem.strip().startswith("-----BEGIN"):
+            return "env:APPLE_PRIVATE_KEY_PEM"
+        if self.private_key_path:
+            return f"file:{self.private_key_path}"
+        return "(none)"
 
 
 def _load_config() -> AppleConfig:
     return AppleConfig(
         private_key_path=os.environ.get("APPLE_PRIVATE_KEY_PATH") or None,
+        private_key_pem=os.environ.get("APPLE_PRIVATE_KEY_PEM") or None,
         key_id=os.environ.get("APPLE_KEY_ID") or None,
         issuer_id=os.environ.get("APPLE_ISSUER_ID") or None,
         bundle_id=os.environ.get("APPLE_BUNDLE_ID") or None,
@@ -121,9 +151,11 @@ def verify_apple_transaction(
         return _mock_transaction(transaction_id, expected_product_id)
 
     try:
-        private_key = Path(cfg.private_key_path).read_bytes()  # bytes per lib API
+        private_key = cfg.read_key_bytes()  # bytes — sourced from PEM env var OR file
+        if private_key is None:
+            raise FileNotFoundError("no key body available from env or disk")
     except Exception as e:
-        logger.warning("Apple IAP: cannot read .p8 key (%s)", e)
+        logger.warning("Apple IAP: cannot read private key (%s)", e)
         if require_real:
             raise ValueError(
                 f"Apple IAP private key unreadable in production: {e}"

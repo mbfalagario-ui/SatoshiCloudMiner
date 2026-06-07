@@ -68,6 +68,11 @@ log = logging.getLogger("asc")
 KEY_ID = os.environ.get("ASC_KEY_ID", "WFQJ6L9KXS")
 ISSUER_ID = os.environ.get("ASC_ISSUER_ID", "d3284874-7bd8-4eff-b272-c9ef0122df9a")
 KEY_PATH = os.environ.get("ASC_KEY_PATH", "/app/backend/keys/AuthKey_WFQJ6L9KXS.p8")
+# Production-safe key delivery: when ASC_PRIVATE_KEY_PEM is set in the
+# environment (e.g. via `fly secrets set`), it overrides KEY_PATH so no
+# .p8 file ever has to touch the filesystem in prod. The value must be
+# the full PEM body including the BEGIN/END markers.
+KEY_PEM = os.environ.get("ASC_PRIVATE_KEY_PEM") or None
 APP_ID = os.environ.get("ASC_APP_ID", "6773104756")
 TARGET_VERSION = os.environ.get("ASC_TARGET_VERSION", "1.0.0")
 LOCALE = os.environ.get("ASC_LOCALE", "en-US")
@@ -112,9 +117,17 @@ TARGET_IAP_PRODUCT_IDS = [
 # JWT + HTTP helpers
 # ---------------------------------------------------------------------------
 def _make_token() -> str:
-    if not Path(KEY_PATH).exists():
-        raise FileNotFoundError(f"ASC key not found at {KEY_PATH}")
-    private_key = Path(KEY_PATH).read_text()
+    # Production-safe: prefer the in-memory PEM body delivered via env var
+    # (ASC_PRIVATE_KEY_PEM); fall back to disk only for local dev.
+    if KEY_PEM and KEY_PEM.strip().startswith("-----BEGIN"):
+        private_key = KEY_PEM
+    elif Path(KEY_PATH).exists():
+        private_key = Path(KEY_PATH).read_text()
+    else:
+        raise FileNotFoundError(
+            f"ASC key not found — set ASC_PRIVATE_KEY_PEM env var "
+            f"(preferred) or place the .p8 at {KEY_PATH}"
+        )
     now = int(time.time())
     payload = {
         "iss": ISSUER_ID,

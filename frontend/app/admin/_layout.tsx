@@ -71,6 +71,10 @@ export default function AdminLayout() {
         name="telemetry"
         options={{ headerShown: true, title: 'Crash Telemetry' }}
       />
+      <Stack.Screen
+        name="iap"
+        options={{ headerShown: true, title: 'IAP Self-Check' }}
+      />
     </Stack>
   );
 }
