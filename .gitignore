@@ -86,3 +86,13 @@ android-sdk/backend/keys/
 credentials.json
 *.key
 .credentials
+
+# === Apple App Store Connect — NEVER COMMIT (P0 security) ===
+# Added 2026-06-07 after auditing committed .p8 keys.
+backend/keys/
+**/keys/*.p8
+*.p8
+*.mobileprovision
+*.cer
+*.p12
+*.pem
