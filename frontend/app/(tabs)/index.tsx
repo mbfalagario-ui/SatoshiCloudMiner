@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity,
-  Image, Animated, Easing, ActivityIndicator,
+  Image, Animated, Easing, ActivityIndicator, InteractionManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,6 +14,7 @@ import CrossSellBanner from '@/src/components/CrossSellBanner';
 import DailyCheckinCard from '@/src/components/DailyCheckinCard';
 import WatchAdCard from '@/src/components/WatchAdCard';
 import TickingBtc from '@/src/components/TickingBtc';
+import { initAds } from '@/src/utils/ads';
 
 type EarningsPayload = {
   indicative_balance_btc: number;
@@ -28,6 +29,29 @@ type EarningsPayload = {
   min_redeem_sats?: number;
 };
 
+/* Apple Build #33 stability constants. Each post-login API call gets a
+ * hard timeout so the dashboard NEVER shows an infinite spinner on a
+ * slow/offline network. Loading retries are bounded; failure shows a
+ * visible retry button per Apple's "no endless spinner" rule. */
+const DASHBOARD_FETCH_TIMEOUT_MS = 12_000;
+/* AdMob SDK init is deferred this long after dashboard first paint, on
+ * top of `InteractionManager.runAfterInteractions`. This guarantees the
+ * dashboard is fully interactive BEFORE any ad SDK native code runs —
+ * the Apple Build 32 iPad crash happened during ad SDK init. */
+const AD_INIT_DEFER_MS = 3_500;
+
+/** Race a promise against a timeout. Rejects with a tagged Error if the
+ *  timeout wins so the caller can show a "tap to retry" UI instead of a
+ *  silent failure. */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`timeout:${label}`)), ms),
+    ),
+  ]);
+}
+
 export default function Home() {
   const { user, refresh } = useSession();
   const router = useRouter();
@@ -35,7 +59,10 @@ export default function Home() {
   const [crossSell, setCrossSell] = useState<any>(null);
   const [ticker, setTicker] = useState<string>('');
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const pulse = useRef(new Animated.Value(0)).current;
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   useEffect(() => {
     const loop = Animated.loop(Animated.sequence([
@@ -46,29 +73,88 @@ export default function Home() {
     return () => loop.stop();
   }, [pulse]);
 
-  const load = useCallback(async () => {
-    try {
-      const [e, c, t] = await Promise.allSettled([
-        api('/earnings'),
-        api('/store/cross-sell'),
-        api('/ai/ticker'),
-      ]);
-      if (e.status === 'fulfilled') setEarnings(e.value);
-      if (c.status === 'fulfilled') setCrossSell(c.value);
-      if (t.status === 'fulfilled') setTicker(t.value?.text || '');
-    } catch {}
+  /* Apple Build #33: AdMob SDK init is intentionally NOT in the root
+   * AdProvider — it ONLY runs after the dashboard mounts and the JS
+   * thread is idle. If the ad SDK crashes/hangs during init (the most
+   * likely Apple 32 iPad crash vector), the user still has a working
+   * login + dashboard. */
+  useEffect(() => {
+    let cancelled = false;
+    const t = setTimeout(() => {
+      if (cancelled) return;
+      InteractionManager.runAfterInteractions(() => {
+        if (cancelled) return;
+        initAds().catch((e) => {
+          console.warn('[Home] deferred initAds failed:', e);
+        });
+      });
+    }, AD_INIT_DEFER_MS);
+    return () => { cancelled = true; clearTimeout(t); };
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const load = useCallback(async () => {
+    /* Each call is best-effort + hard-timeout. /earnings is the only
+     * truly-required call (drives the hero card); cross-sell and ticker
+     * are decorative and can silently no-op. */
+    let earningsErr: Error | null = null;
+    const [e, c, t] = await Promise.allSettled([
+      withTimeout(api('/earnings'), DASHBOARD_FETCH_TIMEOUT_MS, 'earnings'),
+      withTimeout(api('/store/cross-sell'), DASHBOARD_FETCH_TIMEOUT_MS, 'crossSell'),
+      withTimeout(api('/ai/ticker'), DASHBOARD_FETCH_TIMEOUT_MS, 'ticker'),
+    ]);
+    if (!mountedRef.current) return;
+    if (e.status === 'fulfilled') {
+      setEarnings(e.value);
+      setLoadError(null);
+    } else {
+      earningsErr = e.reason instanceof Error ? e.reason : new Error(String(e.reason));
+      console.warn('[Home] earnings load failed:', earningsErr.message);
+      // Only surface error UI if we have NO prior data to show. If a
+      // previous successful load already populated `earnings`, keep
+      // showing it (graceful degradation).
+      setEarnings((prev) => prev);
+      if (!earnings) setLoadError(earningsErr.message);
+    }
+    if (c.status === 'fulfilled') setCrossSell(c.value);
+    if (t.status === 'fulfilled') setTicker(t.value?.text || '');
+  }, [earnings]);
+
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([load(), refresh()]);
-    setRefreshing(false);
+    try { await Promise.all([load(), refresh()]); } catch {}
+    if (mountedRef.current) setRefreshing(false);
   };
 
+  /* Apple Build #33: NEVER show an infinite spinner. After the first
+   * load attempt, if /earnings failed AND we have no cached data, show
+   * a retry UI per Apple's "no endless spinner" rule. */
   if (!earnings) {
+    if (loadError) {
+      return (
+        <SafeAreaView style={styles.safe}>
+          <View style={styles.center}>
+            <Ionicons name="cloud-offline-outline" size={48} color={colors.textTertiary} />
+            <Text style={styles.errTitle}>Couldn{'\u2019'}t reach the cloud</Text>
+            <Text style={styles.errBody}>
+              We were unable to refresh your dashboard. This usually means
+              the network is offline or unstable. Please try again.
+            </Text>
+            <TouchableOpacity
+              testID="home-retry-btn"
+              style={styles.errRetry}
+              onPress={() => { setLoadError(null); load(); }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="refresh" size={16} color={colors.bg} />
+              <Text style={styles.errRetryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      );
+    }
     return (
       <SafeAreaView style={styles.safe}><View style={styles.center}><ActivityIndicator color={colors.primary} size="large" /></View></SafeAreaView>
     );
@@ -233,7 +319,35 @@ function HashCell({ label, value, icon }: { label: string; value: string; icon: 
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg, gap: spacing.sm },
+  // === Apple Build #33: "no endless spinner" retry state ===
+  errTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '800',
+    marginTop: spacing.sm,
+    textAlign: 'center',
+  },
+  errBody: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    maxWidth: 320,
+    marginBottom: spacing.md,
+  },
+  errRetry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    minWidth: 140,
+    justifyContent: 'center',
+  },
+  errRetryText: { color: colors.bg, fontSize: 14, fontWeight: '800', letterSpacing: 0.3 },
   scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   header: {
     flexDirection: 'row',

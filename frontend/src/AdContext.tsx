@@ -31,7 +31,6 @@ import React, {
 } from 'react';
 import { useSession } from '@/src/ctx';
 import {
-  initAds,
   getRewardedManager,
   getInterstitialManager,
   subscribeRewardedLoaded,
@@ -61,14 +60,14 @@ export function AdProvider({ children }: { children: React.ReactNode }) {
 
   const adFree = !!user?.ad_free;
 
-  // 1. Boot the AdMob SDK exactly once for the lifetime of the app.
-  //    `initAds()` is idempotent.
-  useEffect(() => {
-    initAds().catch((e) => {
-      // eslint-disable-next-line no-console
-      console.warn('[AdProvider] initAds failed:', e);
-    });
-  }, []);
+  // 1. AdMob SDK init is INTENTIONALLY NOT triggered here.
+  //    Apple Build #33 stability fix: ad SDK init is deferred until
+  //    AFTER the dashboard has rendered and become interactive — see
+  //    `app/(tabs)/index.tsx`, which calls `initAds()` ~3s after first
+  //    paint. Initialising AdMob at app launch caused a crash on iPad
+  //    Air M3 / iPadOS 26.5 (Apple Rejection on Build 32). Initialising
+  //    only AFTER the user reaches a stable dashboard guarantees the
+  //    app is reviewable even if the SDK fails to initialise at all.
 
   // 2. Track rewarded ad load-state so the Watch button can be gated.
   useEffect(() => {

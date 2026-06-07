@@ -1,0 +1,52 @@
+{
+  "summary": "Build #33 Apple IAP fail-closed hardening fully validated. 20/20 backend tests passed (7 regression auth/health/packages/earnings + 3 iOS-gate + 1 duplicate-replay + 2 iap/restore + 4 telemetry regression + 3 apple.py unit tests). All four required apple.py behaviours confirmed: (a) APPLE_VERIFY_REQUIRED=1 + creds missing → ValueError; (b) APPLE_VERIFY_REQUIRED=1 + real creds returning 401 from Apple → ValueError (no MOCK fallback); (c) dev mode (no env var) + no creds → MOCK; (d) all ValueErrors are mapped to HTTP 402 with sanitised text in /packages/buy and to 'apple_verification_refused' reason in /iap/restore. No HTTP 500. No raw exception leakage (Traceback, APIException, 4040010, 4000006, .p8, issuer_id, key_id all confirmed absent from response bodies). The 503 path is only reachable if a non-ValueError exception escapes apple.py — current behaviour wraps all APIException paths as ValueError, so the 503 branch is effectively unreachable in normal operation. Duplicate apple_transaction_id replay returns HTTP 400 ('already redeemed') — the dup-check runs BEFORE Apple verification so it is reliable regardless of cred state. Telemetry regression (POST /api/telemetry/crash 3 variants + admin GET) all green: 401 without auth, 403 for non-admin, 200 for admin, no _id leakage.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/packages/buy",
+        "issue": "503 fallback branch in server.py:930-942 is currently unreachable because integrations.apple wraps every non-recoverable APIException as ValueError (line 196). Not a bug, but documenting: if Apple ever changes the lib to raise a new exception class, callers will see 503 — verify this is the intent. The remediation plan explicitly accepts this design ('503 used for genuine unexpected backend failure')."
+      },
+      {
+        "endpoint": "integrations.apple",
+        "issue": "Production preflight item #6 ('Set APPLE_VERIFY_REQUIRED=1 on Fly production secrets before EAS submit') is NOT yet done — verified that the variable is NOT present in /app/backend/.env. This is the kill-switch that makes the fail-closed guarantee real in production. RECOMMEND main agent ensure `fly secrets set APPLE_VERIFY_REQUIRED=1 -a <fly-app>` runs BEFORE Build #33 IPA is submitted, otherwise the 401-from-Apple fallback (currently active because of bad creds) would silently issue MOCK entitlements to real iOS users."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_build33_apple_iap.py",
+    "/app/test_reports/pytest/build33_results.xml"
+  ],
+  "action_items": [
+    "Confirm `APPLE_VERIFY_REQUIRED=1` is set on Fly production secrets BEFORE EAS submit. Without it, the current 401-from-Apple state would let users buy via MOCK transactions (environment='AUTH_FAILED_FALLBACK') — exactly the loophole Apple flagged. The preflight checklist in /app/memory/build_33_remediation.md item 6 is unchecked.",
+    "Rotate the Apple App Store Connect key (J55DSC44V5) — Apple consistently returns 401 to our verifier, meaning the issuer/keyId/.p8 set is no longer trusted. This is documented in the build_33_remediation.md notes and is also visible in backend logs ('401 Unauthenticated from Apple — credentials (issuer/keyId/.p8) are invalid').",
+    "Consider splitting server.py (3832 lines) into routers/ — out of scope for #33 but tracked from iteration_2."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/integrations/apple.py: the require_real flag correctly gates BOTH the 'no creds at all' branch (line 95-101) and the '401-from-Apple' branch (line 207-215). Excellent layered defence — both paths now raise ValueError under APPLE_VERIFY_REQUIRED=1.",
+    "/app/backend/server.py:912-929: ValueError → HTTP 402 with a fixed, generic, user-actionable detail string. NO interpolation of the raw exception. Verified via tests that 'Traceback', 'APIException', '4040010', '.p8', 'key_id', 'issuer_id' never appear in response bodies.",
+    "/app/backend/server.py:1109-1118 (/iap/restore): same hardening — ValueError → reason='apple_verification_refused', Exception → reason='verifier_unavailable'. Per-purchase isolated so one bad tid never breaks the batch.",
+    "/app/backend/server.py:898-906: dup-tid check correctly runs BEFORE Apple verification, so a replay is rejected with HTTP 400 'already redeemed' deterministically (verified by seeded-Mongo test).",
+    "integrations.apple._mock_transaction returns environment='MOCK' (no-creds dev) or 'AUTH_FAILED_FALLBACK' (401 in non-prod). Both make the downstream transaction record's apple_mocked=true — easy to audit in Mongo and refuse if seen in production."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_build33_apple_iap.py (new, 20 tests)",
+    "/app/test_reports/pytest/build33_results.xml (generated)",
+    "/app/test_reports/iteration_3.json (this file)"
+  ],
+  "success_rate": {
+    "backend": "100% (20/20 passed)",
+    "frontend": "N/A — backend-only test pass per review request. Frontend dev preview is broken (pre-existing reanimated/worklets babel issue, documented in iteration_2 context_for_next_testing_agent)."
+  },
+  "seed_data_creation": "Created and cleaned up 1 transient TEST_REPLAY_* transactions doc in MongoDB (auto-deleted in test teardown). 3 TEST_b33_* crash_reports docs left in crash_reports collection (prefixed for easy cleanup, no impact on production data). 1 fresh test user registered via /api/auth/register (test_b33_*@hashcloud.app).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Build #33 backend is shipped-ready. Re-use /app/backend/tests/test_build33_apple_iap.py + /app/backend/tests/test_telemetry.py (from iteration_2) as the regression suite. Two production-side items to verify pre-submit: (1) `fly secrets set APPLE_VERIFY_REQUIRED=1` is applied — without it the fail-closed guarantee is inert; (2) Apple key J55DSC44V5 is rotated so 401-from-Apple stops triggering. The dev container intentionally has APPLE_VERIFY_REQUIRED unset so MOCK fallback keeps non-iOS dev flows working; do not set it locally without first making real purchases impossible to test. Frontend dev preview remains broken (reanimated@4.1.7 + missing react-native-worklets babel plugin) — out of scope for backend testing.",
+  "rca_of_issue": "N/A — no defects found. The previously failing 'iOS post-login crash on iPad Air M3 / iPadOS 26.5' is a frontend rejection root-caused to AdMob SDK init timing on the iPad code path; the frontend fix (`ios.supportsTablet:false` + deferred initAds) is out of scope here. The backend side of the remediation (apple.py fail-closed + sanitised error mapping in /packages/buy and /iap/restore) is fully verified by this test suite."
+}

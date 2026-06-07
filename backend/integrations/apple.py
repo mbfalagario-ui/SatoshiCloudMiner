@@ -79,10 +79,27 @@ def verify_apple_transaction(
         - _mocked: True if not actually verified against Apple.
 
     Raises ValueError on bundle id / product id mismatch when running live.
+
+    Apple Build #33 / App Review Guideline 2.1(b) — production safety:
+    When the env var APPLE_VERIFY_REQUIRED is "1" (which is the case
+    for production EAS builds), this function MUST NOT fall back to
+    a mock transaction. If credentials are missing OR the verifier
+    library can't be imported, a ValueError is raised so the caller
+    refuses the purchase. This is the "fail closed" guarantee Apple
+    requires — under no circumstances does a production user receive
+    paid hashpower without a verified StoreKit transaction.
     """
+    require_real = os.environ.get("APPLE_VERIFY_REQUIRED", "").strip() in ("1", "true", "True", "yes")
     cfg = _load_config()
     if not cfg.enabled:
-        logger.info("Apple IAP: credentials not configured — returning MOCK transaction.")
+        if require_real:
+            logger.error(
+                "Apple IAP: credentials not configured but APPLE_VERIFY_REQUIRED=1 — refusing purchase."
+            )
+            raise ValueError(
+                "Apple IAP verification is required in production but credentials are not configured."
+            )
+        logger.info("Apple IAP: credentials not configured — returning MOCK transaction (dev mode).")
         return _mock_transaction(transaction_id, expected_product_id)
 
     try:
@@ -92,18 +109,25 @@ def verify_apple_transaction(
             APIException,
         )
         from appstoreserverlibrary.models.Environment import Environment  # type: ignore
-        from appstoreserverlibrary.signed_data_verifier import (  # type: ignore
+        from appstoreserverlibrary.signed_data_verifier import (  # type: ignore # noqa: F401
             SignedDataVerifier,
-            VerificationException,
         )
     except Exception as e:
-        logger.warning("Apple IAP: app-store-server-library import failed (%s) — MOCK.", e)
+        logger.warning("Apple IAP: app-store-server-library import failed (%s)", e)
+        if require_real:
+            raise ValueError(
+                f"Apple IAP verifier library unavailable in production: {e}"
+            )
         return _mock_transaction(transaction_id, expected_product_id)
 
     try:
         private_key = Path(cfg.private_key_path).read_bytes()  # bytes per lib API
     except Exception as e:
-        logger.warning("Apple IAP: cannot read .p8 key (%s) — MOCK.", e)
+        logger.warning("Apple IAP: cannot read .p8 key (%s)", e)
+        if require_real:
+            raise ValueError(
+                f"Apple IAP private key unreadable in production: {e}"
+            )
         return _mock_transaction(transaction_id, expected_product_id)
 
     def _env_from_override() -> Optional[Environment]:
@@ -161,13 +185,34 @@ def verify_apple_transaction(
                     transaction_id,
                 )
                 continue
-            raise
+            # Other Apple API errors (400 invalid format, 5xx Apple outage,
+            # etc.) — fail the verification cleanly as a ValueError so the
+            # /packages/buy and /iap/restore endpoints both surface HTTP
+            # 402 with a sanitised message rather than 5xx.
+            logger.warning(
+                "Apple IAP: APIException (non-recoverable) env=%s tid=%s msg=%s",
+                env, transaction_id, msg,
+            )
+            raise ValueError(f"Apple IAP API error: {msg[:120]}")
         except Exception as e:
             last_exc = e
             continue
 
     if not signed_payload:
         if auth_failed:
+            # Apple Build #33: in production, refuse to fall back to a
+            # MOCK if Apple's 401 says our creds are bad — granting
+            # paid hashpower without verification would violate
+            # Guideline 2.1(b). The .env var is the kill-switch.
+            if require_real:
+                logger.error(
+                    "Apple IAP: 401 from Apple AND APPLE_VERIFY_REQUIRED=1 "
+                    "— refusing transaction %s.", transaction_id,
+                )
+                raise ValueError(
+                    "Apple IAP authentication failed in production. "
+                    "Operator must rotate the App Store Connect key."
+                )
             mock = _mock_transaction(transaction_id, expected_product_id)
             mock["environment"] = "AUTH_FAILED_FALLBACK"
             return mock

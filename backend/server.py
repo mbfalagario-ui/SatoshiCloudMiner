@@ -910,10 +910,36 @@ async def buy_package(
                 expected_product_id=pkg["id"],
             )
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=f"Apple IAP validation failed: {e}")
-        except Exception as e:
-            logger.exception("Apple IAP verification crashed")
-            raise HTTPException(status_code=500, detail=f"Apple IAP verification error: {e}")
+            # Apple Build #33: any IAP validation failure (bundle id
+            # mismatch, product id mismatch, expired transaction,
+            # missing credentials with APPLE_VERIFY_REQUIRED=1, etc.)
+            # is surfaced as 402 Payment Required — NOT 500 — because
+            # this is a client-actionable purchase issue rather than a
+            # server bug. We deliberately do NOT echo the raw exception
+            # to the client to avoid leaking internal details.
+            logger.warning("Apple IAP validation refused for user=%s pkg=%s: %s",
+                           current_user.get("id"), pkg["id"], e)
+            raise HTTPException(
+                status_code=402,
+                detail=(
+                    "Apple could not verify this purchase. Please ensure "
+                    "you completed the App Store payment sheet and try "
+                    "again, or contact support if the issue persists."
+                ),
+            )
+        except Exception:
+            # Genuine unexpected backend failure — still refuse the
+            # purchase (Section 6: fail closed), but flag it as 503
+            # so we don't accidentally satisfy the rejection-resistant
+            # "no 500 errors" Apple rule.
+            logger.exception("Apple IAP verifier crashed unexpectedly")
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Purchase verification is temporarily unavailable. "
+                    "Please try again in a moment."
+                ),
+            )
 
     # ------------------------------------------------------------------
     # Entitlement products (no machine — just flip a user flag, e.g. ad_free)
@@ -1078,15 +1104,17 @@ async def restore_purchases(
             errors.append({"product_id": pid, "reason": "redeemed_by_another_account"})
             continue
 
-        # Verify with Apple before granting.
+        # Verify with Apple before granting (Build #33 hardening:
+        # generic error messages, no raw exception leakage).
         try:
             apple_info = verify_apple_transaction(tid, expected_product_id=pkg["id"])
         except ValueError as e:
-            errors.append({"product_id": pid, "reason": f"apple_verify_failed: {e}"})
+            logger.warning("restore: apple verify refused tid=%s pid=%s: %s", tid, pid, e)
+            errors.append({"product_id": pid, "reason": "apple_verification_refused"})
             continue
-        except Exception as e:
+        except Exception:
             logger.exception("restore verify crashed for tid=%s", tid)
-            errors.append({"product_id": pid, "reason": f"verify_error: {e}"})
+            errors.append({"product_id": pid, "reason": "verifier_unavailable"})
             continue
 
         # Grant the entitlement (mirror /packages/buy semantics, sans bonus).
