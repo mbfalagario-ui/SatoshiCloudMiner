@@ -51,9 +51,27 @@ class AppleConfig:
     def read_key_bytes(self) -> Optional[bytes]:
         """Returns the .p8 contents as bytes, sourced from the secure
         env var if present, else from disk. Returns None if neither is
-        available."""
+        available.
+
+        Defensive normalisation: some Fly/Cloud UIs store multiline
+        secrets as a single line with literal backslash-n sequences
+        ("\\n") instead of real newlines. The cryptography library
+        requires real newlines to parse a PEM, so we silently fix the
+        most common form of that pasting accident here. This is a
+        no-op for PEMs that already have real newlines.
+        """
         if self.private_key_pem and self.private_key_pem.strip().startswith("-----BEGIN"):
-            return self.private_key_pem.encode("utf-8")
+            body = self.private_key_pem
+            # Normalise escaped newline sequences if present (no-op otherwise).
+            if "\\n" in body and "\n" not in body:
+                body = body.replace("\\n", "\n")
+            # Normalise CRLF → LF (some clipboards / Windows UIs insert CRs).
+            if "\r\n" in body:
+                body = body.replace("\r\n", "\n")
+            # Ensure trailing newline (some PEM parsers are strict).
+            if not body.endswith("\n"):
+                body = body + "\n"
+            return body.encode("utf-8")
         if self.private_key_path:
             try:
                 return Path(self.private_key_path).read_bytes()
