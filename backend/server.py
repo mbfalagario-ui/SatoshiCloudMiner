@@ -2500,24 +2500,35 @@ async def admin_telemetry_crashes(
 async def admin_iap_selfcheck(
     current_user: Dict[str, Any] = Depends(get_current_admin),
 ):
-    """Read-only IAP credential health check.
+    """Read-only IAP credential health check — HONEST EDITION.
 
-    Returns the resolved Apple ASC configuration WITHOUT exposing secret
-    material, so the operator can verify after a key rotation that:
-      • the `.p8` file is present and readable
-      • the issuer/key/bundle env vars are wired correctly
-      • `APPLE_VERIFY_REQUIRED` is set in production
-      • Apple's API actually accepts the credentials (a single dummy
-        transactionId request — Apple returns 4040010 "not found" on
-        valid auth, 401 on invalid auth, which lets us distinguish
-        "creds OK, no such txn" from "creds broken").
+    Returns deterministic structured fields so the operator can verify,
+    without log scraping, that:
+      • Apple Root CA cert is bundled into the running image
+      • Apple `.p8` PEM actually parses (not just "looks present")
+      • Apple's API authenticates the credentials
+      • `APPLE_VERIFY_REQUIRED` is set
+      • `ready_for_production` is TRUE only if all of the above pass
 
     Never exposes:
       • the contents of the .p8 file
-      • the issuer/key ID (only their lengths + first/last 2 chars)
-      • any other tokens
+      • the full issuer/key ID (only their lengths + first/last 2 chars)
+      • any token
+
+    Build 37 forensic finding (now corrected):
+    The previous selfcheck classified any ValueError whose message
+    contained "transaction" + "not found" as `apple_status: "ok"`.
+    Apple's library wraps PEM-load errors inside a "transaction not
+    found" envelope, which caused the selfcheck to silently report
+    `apple_status: "ok"` even when the `.p8` could not be parsed.
+    This rewrite REPLACES the substring-match classifier with explicit
+    structural checks (CA present + P8 parses + Apple round-trip).
     """
-    from integrations.apple import _load_config  # type: ignore
+    from integrations.apple import (
+        _load_config,
+        find_apple_root_ca,
+        try_parse_apple_p8,
+    )  # type: ignore
 
     def _mask(s: Optional[str]) -> str:
         if not s:
@@ -2527,6 +2538,32 @@ async def admin_iap_selfcheck(
         return f"{s[:2]}…{s[-2:]} (len={len(s)})"
 
     cfg = _load_config()
+
+    # ── 1) Apple Root CA file probe (Fix A verification) ──────────────
+    apple_root_ca_path = None
+    apple_root_ca_present = False
+    apple_root_ca_size = 0
+    try:
+        found = find_apple_root_ca()
+        if found is not None:
+            apple_root_ca_path = str(found)
+            apple_root_ca_present = True
+            try:
+                apple_root_ca_size = found.stat().st_size
+            except Exception:
+                apple_root_ca_size = 0
+    except Exception:
+        pass
+
+    # ── 2) `.p8` parse probe (Fix C central guarantee) ────────────────
+    # This is a LOCAL parse — no Apple round-trip. It tells us
+    # unambiguously whether the configured PEM can be loaded by the
+    # cryptography library. No substring matching, no heuristics.
+    p8_probe = try_parse_apple_p8()
+    apple_p8_parses = bool(p8_probe.get("ok"))
+
+    # Legacy `.p8` file fields (kept for backward-compat with any older
+    # operator dashboards; the source of truth for prod is `apple_p8_parses`).
     p8_path = cfg.private_key_path
     p8_exists = False
     p8_size = 0
@@ -2541,50 +2578,67 @@ async def admin_iap_selfcheck(
 
     require_real = os.environ.get("APPLE_VERIFY_REQUIRED", "").strip() in ("1", "true", "True", "yes")
 
-    # Try a known-bad but well-formatted transaction ID against Apple to
-    # discriminate which side fails. Apple returns 4040010 (NotFound) when
-    # auth is OK, 401 when auth is bad, 4000006 when the format is invalid.
-    # We pass a 16-digit numeric value (Apple's typical txn id format) so
-    # the response is auth/lookup rather than format validation.
-    apple_round_trip = "skipped"
-    apple_status = None
-    try:
-        from integrations.apple import verify_apple_transaction
-        result = verify_apple_transaction("1000000000000000", expected_product_id=None)
-        # If verify "succeeded" without raising, examine for mock-fallback
-        # which is the silent failure path Apple Section 6 prohibits.
-        if result.get("_mocked"):
-            env_label = str(result.get("environment", "MOCK"))
-            if env_label == "AUTH_FAILED_FALLBACK":
-                apple_round_trip = "creds_INVALID_silent_mock_fallback"
-                apple_status = "bad_creds"
+    # ── 3) Apple round-trip (only meaningful if P8 actually parses) ──
+    # If the P8 doesn't parse, do NOT attempt the round-trip — the
+    # error would be a PEM error, NOT an Apple auth result, and that
+    # is exactly what mis-classified Build 37 last time. Honest
+    # selfcheck rule: a verdict from a step whose prerequisites failed
+    # is no verdict at all.
+    apple_round_trip = "skipped_p8_unparseable"
+    if apple_p8_parses:
+        try:
+            from integrations.apple import verify_apple_transaction
+            result = verify_apple_transaction("1000000000000000", expected_product_id=None)
+            if result.get("_mocked"):
+                env_label = str(result.get("environment", "MOCK"))
+                if env_label == "AUTH_FAILED_FALLBACK":
+                    apple_round_trip = "creds_INVALID_silent_mock_fallback"
+                else:
+                    apple_round_trip = f"creds_missing_silent_mock_fallback ({env_label})"
             else:
-                apple_round_trip = f"creds_missing_silent_mock_fallback ({env_label})"
-                apple_status = "missing"
-        else:
-            apple_round_trip = "unexpected_real_success"
-            apple_status = "ok"
-    except ValueError as e:
-        msg = str(e)
-        if "4040010" in msg or ("transaction" in msg.lower() and "not found" in msg.lower()):
-            apple_round_trip = "creds_valid_txn_not_found"
-            apple_status = "ok"
-        elif "401" in msg or "authentication" in msg.lower() or "Unauthenticated" in msg:
-            apple_round_trip = "creds_INVALID_apple_401"
-            apple_status = "bad_creds"
-        elif "not configured" in msg.lower() or "unreadable" in msg.lower():
-            apple_round_trip = "creds_missing_locally"
-            apple_status = "missing"
-        elif "4000006" in msg or "Invalid transaction" in msg:
-            # Format check happens before auth — implies creds reached Apple.
-            apple_round_trip = "creds_likely_ok_format_rejected"
-            apple_status = "ok"
-        else:
-            apple_round_trip = f"value_error_{msg[:60]}"
-            apple_status = "unknown"
-    except Exception as e:
-        apple_round_trip = f"exception_{type(e).__name__}"
+                apple_round_trip = "unexpected_real_success"
+        except ValueError as e:
+            msg = str(e)
+            # The PEM-parse failure case CANNOT reach here anymore
+            # because we gate on `apple_p8_parses` above. The remaining
+            # branches discriminate true Apple-side conditions.
+            if "401" in msg or "authentication" in msg.lower() or "Unauthenticated" in msg:
+                apple_round_trip = "creds_INVALID_apple_401"
+            elif "4000006" in msg or "Invalid transaction" in msg:
+                # Format-rejected — auth happened, so creds reached Apple.
+                apple_round_trip = "creds_likely_ok_format_rejected"
+            elif "4040010" in msg or ("transaction" in msg.lower() and "not found" in msg.lower()):
+                # Genuine "txn not found" — Apple accepted the auth.
+                apple_round_trip = "creds_valid_txn_not_found"
+            elif "not configured" in msg.lower() or "unreadable" in msg.lower():
+                apple_round_trip = "creds_missing_locally"
+            else:
+                apple_round_trip = f"value_error_{msg[:60]}"
+        except Exception as e:
+            apple_round_trip = f"exception_{type(e).__name__}"
+
+    # ── 4) FINAL HONEST STATUS — must satisfy ALL three gates ─────────
+    apple_status = "bad_creds"  # safe default
+    if not apple_root_ca_present:
+        apple_status = "bad_creds"
+    elif not apple_p8_parses:
+        apple_status = "bad_creds"
+    elif apple_round_trip in ("creds_valid_txn_not_found", "creds_likely_ok_format_rejected", "unexpected_real_success"):
+        apple_status = "ok"
+    elif apple_round_trip in ("creds_INVALID_apple_401", "creds_INVALID_silent_mock_fallback"):
+        apple_status = "bad_creds"
+    elif apple_round_trip.startswith("creds_missing"):
+        apple_status = "missing"
+    else:
         apple_status = "unknown"
+
+    ready_for_production = bool(
+        cfg.enabled
+        and require_real
+        and apple_root_ca_present
+        and apple_p8_parses
+        and apple_status == "ok"
+    )
 
     return {
         "enabled": cfg.enabled,
@@ -2597,15 +2651,23 @@ async def admin_iap_selfcheck(
             "size_bytes": p8_size,
             "from_env_var": bool(cfg.private_key_pem),
         },
+        # Fix A surface — Apple Root CA visibility
+        "apple_root_ca_present": apple_root_ca_present,
+        "apple_root_ca_path": apple_root_ca_path or "(not found)",
+        "apple_root_ca_size": apple_root_ca_size,
+        # Fix C surface — honest P8 parse result
+        "apple_p8_parses": apple_p8_parses,
+        "apple_p8_error_class": p8_probe.get("error_class"),
+        "apple_p8_error_msg": p8_probe.get("error_msg"),
+        # Identity / config
         "key_id":    _mask(cfg.key_id),
         "issuer_id": _mask(cfg.issuer_id),
         "bundle_id": cfg.bundle_id or "(unset)",
         "environment_override": cfg.environment_override or "(none)",
+        # Apple round-trip + honest verdict
         "apple_round_trip": apple_round_trip,
         "apple_status": apple_status,
-        "ready_for_production": (
-            cfg.enabled and require_real and apple_status == "ok"
-        ),
+        "ready_for_production": ready_for_production,
     }
 
 

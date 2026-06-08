@@ -110,18 +110,59 @@ def _load_config() -> AppleConfig:
 # ---------------------------------------------------------------------------
 # Apple Root CA — used for JWS chain verification.
 #
-# Loaded once at module import from /app/backend/certs/AppleRootCA-G3.cer
-# (DER format). This is the certificate that Apple signs JWS receipts with;
-# without it, SignedDataVerifier's chain validator cannot anchor the trust
-# chain. We REFUSE to fall back to root_certificates=[] (which would skip
-# chain validation entirely) — that was a Build #36 vulnerability flagged
-# by the operator.
+# Loaded once at module import from the first existing candidate path
+# (DER format). The cert is searched in multiple locations because the
+# repo layout (/app/backend/certs/) differs from the Fly container
+# layout (/app/certs/, because the Dockerfile flattens backend/ → /app/).
+#
+# This is the certificate that Apple signs JWS receipts with; without
+# it, SignedDataVerifier's chain validator cannot anchor the trust
+# chain. We REFUSE to fall back to root_certificates=[] (which would
+# skip chain validation entirely) — that was a Build #36 vulnerability
+# flagged by the operator.
 #
 # To rotate: download a fresh DER from
 #   https://www.apple.com/certificateauthority/AppleRootCA-G3.cer
 # and overwrite the file. Apple G3 is valid until 2039-04-30.
 # ---------------------------------------------------------------------------
-_APPLE_ROOTS_PATH = Path(__file__).resolve().parent.parent / "certs" / "AppleRootCA-G3.cer"
+def _apple_roots_candidate_paths() -> list[Path]:
+    """Return the ordered list of paths we will try when locating the
+    Apple Root CA cert. The first existing file wins. Order:
+      1. APPLE_ROOT_CA_PATH env override (operator escape hatch)
+      2. /app/certs/AppleRootCA-G3.cer        (Fly container — Dockerfile
+         flattens backend/ to /app/, so the cert lands here)
+      3. /app/backend/certs/AppleRootCA-G3.cer (sandbox / git layout)
+      4. Path next to this file: <module>/../certs/AppleRootCA-G3.cer
+         (works for any layout where integrations/ is a sibling of certs/)
+    """
+    candidates: list[Path] = []
+    override = os.environ.get("APPLE_ROOT_CA_PATH")
+    if override:
+        candidates.append(Path(override))
+    candidates.append(Path("/app/certs/AppleRootCA-G3.cer"))
+    candidates.append(Path("/app/backend/certs/AppleRootCA-G3.cer"))
+    candidates.append(
+        Path(__file__).resolve().parent.parent / "certs" / "AppleRootCA-G3.cer"
+    )
+    return candidates
+
+
+def find_apple_root_ca() -> Optional[Path]:
+    """Return the first candidate path that actually exists, or None.
+
+    Used by both `_load_apple_roots()` (production code path) and the
+    `/api/admin/iap/selfcheck` endpoint (read-only diagnostic), so both
+    use exactly the same resolution logic.
+    """
+    for p in _apple_roots_candidate_paths():
+        try:
+            if p.is_file():
+                return p
+        except Exception:
+            continue
+    return None
+
+
 _APPLE_ROOTS_BYTES: Optional[list] = None  # list[bytes] once loaded
 
 
@@ -134,23 +175,25 @@ def _load_apple_roots() -> list:
     global _APPLE_ROOTS_BYTES
     if _APPLE_ROOTS_BYTES is not None:
         return _APPLE_ROOTS_BYTES
-    if not _APPLE_ROOTS_PATH.exists():
+    found = find_apple_root_ca()
+    if found is None:
+        searched = ", ".join(str(p) for p in _apple_roots_candidate_paths())
         raise RuntimeError(
-            f"Apple Root CA certificate not found at {_APPLE_ROOTS_PATH}. "
+            f"Apple Root CA certificate not found. Searched: {searched}. "
             "Download from https://www.apple.com/certificateauthority/AppleRootCA-G3.cer "
-            "before starting the backend."
+            "and place at /app/certs/AppleRootCA-G3.cer in the Fly image."
         )
-    with open(_APPLE_ROOTS_PATH, "rb") as f:
+    with open(found, "rb") as f:
         der = f.read()
     if not der or len(der) < 200:
         raise RuntimeError(
-            f"Apple Root CA file at {_APPLE_ROOTS_PATH} is empty or truncated "
+            f"Apple Root CA file at {found} is empty or truncated "
             f"({len(der)} bytes); will not skip chain validation."
         )
     _APPLE_ROOTS_BYTES = [der]
     logger.info(
         "Apple Root CA loaded for JWS chain validation: path=%s size=%dB",
-        _APPLE_ROOTS_PATH, len(der),
+        found, len(der),
     )
     return _APPLE_ROOTS_BYTES
 
@@ -165,6 +208,57 @@ def _mock_transaction(transaction_id: str, product_id: Optional[str]) -> Dict[st
         "environment": "MOCK",
         "_mocked": True,
     }
+
+
+def try_parse_apple_p8() -> Dict[str, Any]:
+    """Honest, side-effect-free probe of the configured Apple .p8 PEM.
+
+    Used by `/api/admin/iap/selfcheck` to give a TRUE answer to:
+    "does the configured private key actually parse?"
+
+    Returns:
+        {
+          "ok": bool,
+          "key_present": bool,
+          "key_source": "env:APPLE_PRIVATE_KEY_PEM" | "file:..." | "(none)",
+          "error_class": Optional[str],   # e.g. "InvalidPadding"
+          "error_msg":   Optional[str],   # SANITIZED, first 240 chars
+        }
+
+    NEVER raises. NEVER logs the PEM body. NEVER returns the PEM body.
+    Does NOT call out to Apple — purely local PEM-parse check.
+    """
+    cfg = _load_config()
+    out: Dict[str, Any] = {
+        "ok": False,
+        "key_present": False,
+        "key_source": cfg.key_source,
+        "error_class": None,
+        "error_msg": None,
+    }
+    pem_bytes = cfg.read_key_bytes()
+    if not pem_bytes:
+        out["error_class"] = "MissingKey"
+        out["error_msg"] = "No APPLE_PRIVATE_KEY_PEM env var and no .p8 file at APPLE_PRIVATE_KEY_PATH."
+        return out
+    out["key_present"] = True
+    try:
+        # Defer the import so backend boot doesn't pay the cost when this
+        # endpoint isn't called.
+        from cryptography.hazmat.primitives import serialization
+        # password=None is correct for Apple .p8 keys (Apple does not
+        # encrypt the private key body).
+        serialization.load_pem_private_key(pem_bytes, password=None)
+        out["ok"] = True
+        return out
+    except Exception as e:
+        # Capture the EXACT exception class name (e.g. "InvalidPadding",
+        # "ValueError", "UnsupportedAlgorithm") so selfcheck can give an
+        # honest answer instead of the previous "transaction not found"
+        # misclassification.
+        out["error_class"] = type(e).__name__
+        out["error_msg"] = str(e)[:240]
+        return out
 
 
 def verify_apple_transaction(

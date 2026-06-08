@@ -54,6 +54,7 @@ COPY server.py ./
 COPY integrations/ ./integrations/
 COPY services/ ./services/
 COPY assets/ ./assets/
+COPY certs/ ./certs/
 COPY start.sh ./
 RUN chmod +x ./start.sh
 
