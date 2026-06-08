@@ -343,7 +343,7 @@ class RewardedManager {
     }, AD_LOAD_TIMEOUT_MS);
 
     this.subs.push(
-      ad.addAdEventListener(AdEventType.LOADED, () => {
+      ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
         this._loaded = true;
         this._lastError = null;
         this.clearLoadTimer();

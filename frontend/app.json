@@ -13,7 +13,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.satoshicloudminer",
-      "buildNumber": "34",
+      "buildNumber": "35",
       "config": {
         "usesNonExemptEncryption": false
       },
