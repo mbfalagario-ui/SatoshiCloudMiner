@@ -90,6 +90,7 @@ export default function Store() {
       // unless apple_transaction_id is present.
       // ───────────────────────────────────────────────────────────
       let appleTransactionId: string | undefined;
+      let appleJws: string | undefined;
       if (Platform.OS === 'ios') {
         if (!isIapAvailable()) {
           Alert.alert(
@@ -113,6 +114,7 @@ export default function Store() {
           return;
         }
         appleTransactionId = result.transactionId;
+        appleJws = result.jwsRepresentation;
       }
 
       const r = await api('/packages/buy', {
@@ -120,6 +122,12 @@ export default function Store() {
         body: JSON.stringify({
           package_id: pkg.id,
           apple_transaction_id: appleTransactionId,
+          // Build 37: StoreKit2 signed JWS receipt (preferred). Backend
+          // verifies it locally against Apple Root CA — eliminates the
+          // sandbox propagation race that surfaced as "Apple could not
+          // verify this purchase" in Build 36 TestFlight. Undefined is
+          // OK on iOS < 17.4 — backend falls back to ID lookup w/ backoff.
+          apple_jws_representation: appleJws,
         }),
       });
       const bonusMsg = r.first_purchase_bonus_applied
@@ -174,7 +182,14 @@ export default function Store() {
       const r = await api('/iap/restore', {
         method: 'POST',
         body: JSON.stringify({
-          purchases: items.map((i) => ({ transaction_id: i.transactionId, product_id: i.productId })),
+          purchases: items.map((i) => ({
+            transaction_id: i.transactionId,
+            product_id: i.productId,
+            // Build 37: include StoreKit2 JWS for local verification —
+            // restore flows are also subject to the sandbox propagation
+            // race that broke /packages/buy in Build 36.
+            apple_jws_representation: i.jwsRepresentation,
+          })),
         }),
       });
       const restored = (r?.restored || []).length;
@@ -298,10 +313,24 @@ function PlanCard({ pkg, alreadyBonusUsed, onBuy, busy }: { pkg: Pkg; alreadyBon
   const bonusGhs = bonusActive ? (pkg.hashrate_boost_ghs * pkg.first_purchase_bonus_pct) / 100 : 0;
   return (
     <LinearGradient colors={['#16202C', '#0E1620']} style={styles.detailCard}>
-      {pkg.offer_text ? (
+      {/* Build 37 — App Review remediation:
+         Hide the promotional offer pill (e.g. "Buy 1, Get 1 free") once
+         the user has already consumed the first-purchase bonus for this
+         pack. Replacing it with a neutral "First-purchase bonus used"
+         pill makes the state transparent without making any claim of a
+         free booster the user can no longer receive. Apple G1.0 / G3.1
+         compliance. */}
+      {pkg.offer_text && !alreadyBonusUsed ? (
         <View style={styles.offerPill}>
           <Ionicons name="pricetag" size={11} color="#FF7A00" />
           <Text style={styles.offerText}>{pkg.offer_text}</Text>
+        </View>
+      ) : alreadyBonusUsed ? (
+        <View style={[styles.offerPill, styles.offerPillUsed]}>
+          <Ionicons name="checkmark-circle" size={11} color={colors.textTertiary} />
+          <Text style={[styles.offerText, { color: colors.textTertiary }]}>
+            First-purchase bonus used
+          </Text>
         </View>
       ) : null}
       <View style={styles.bonusRow}>
@@ -420,6 +449,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   offerText: { color: '#FF7A00', fontSize: 11, fontWeight: '800' },
+  offerPillUsed: {
+    // Neutral, non-promotional palette for the "First-purchase bonus used"
+    // state (Build 37 App Review remediation — no orange/promo colour).
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
   bonusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   bonusLabel: { color: colors.textSecondary, fontSize: 13 },
   bonusValue: { color: colors.primary, fontSize: 18, fontWeight: '800', fontFamily: fonts.mono },

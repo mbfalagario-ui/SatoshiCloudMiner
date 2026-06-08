@@ -25,6 +25,17 @@ export type IapBuyResult = {
   applePurchase: boolean;
   transactionId?: string;
   productId: string;
+  /**
+   * StoreKit2 signed JWS receipt for this transaction (Build 37+).
+   * Available on iOS 17.4+ via openiap's unified `purchaseToken` field —
+   * Apple signs this with their intermediate cert and the backend can
+   * verify it locally against Apple Root CA without any Apple API call.
+   * Eliminates the sandbox propagation race in TestFlight.
+   *
+   * `undefined` is acceptable — the backend gracefully falls back to
+   * transaction-ID lookup with retry/backoff in that case.
+   */
+  jwsRepresentation?: string;
 };
 
 let _initialized = false;
@@ -78,14 +89,45 @@ function _extractTransactionId(purchase: any): string | undefined {
   );
 }
 
+/**
+ * Extract the StoreKit2 signed JWS receipt from the openiap Purchase
+ * object. v15+ exposes it via the unified `purchaseToken` field on iOS
+ * (it's the Android purchase token equivalent — different semantics,
+ * same field name in the openiap spec).
+ *
+ * Older builds of react-native-iap exposed it under camelCase variants
+ * (`jwsRepresentationIos`, `jwsRepresentationIOS`, `jwsRepresentation`)
+ * which we check as fallbacks to remain backwards-compatible during the
+ * v14→v15 transition window.
+ *
+ * NEVER log the returned string — it's a signed Apple receipt.
+ */
+function _extractJws(purchase: any): string | undefined {
+  const jws =
+    purchase?.purchaseToken ||
+    purchase?.jwsRepresentationIos ||
+    purchase?.jwsRepresentationIOS ||
+    purchase?.jwsRepresentation ||
+    undefined;
+  if (typeof jws !== 'string' || jws.length < 16) return undefined;
+  return jws;
+}
+
 function _ensureListeners(iap: any) {
   if (_purchaseSub || _errorSub) return;
   if (typeof iap.purchaseUpdatedListener === 'function') {
     _purchaseSub = iap.purchaseUpdatedListener(async (purchase: any) => {
       const productId = _extractProductId(purchase);
       const tx = _extractTransactionId(purchase);
+      const jws = _extractJws(purchase);
       // eslint-disable-next-line no-console
-      console.log('[IAP] purchaseUpdated:', { productId, tx });
+      // SAFE log only — never log the JWS body, only its presence + length.
+      console.log('[IAP] purchaseUpdated:', {
+        productId,
+        tx,
+        jws_present: Boolean(jws),
+        jws_len: jws ? jws.length : 0,
+      });
 
       // Resolve the matching pending request (FIFO if productId unknown).
       const idx = _pending.findIndex((p) =>
@@ -97,6 +139,7 @@ function _ensureListeners(iap: any) {
           applePurchase: Boolean(tx),
           transactionId: tx,
           productId: productId || slot.productId,
+          jwsRepresentation: jws,
         });
       }
 
@@ -309,7 +352,7 @@ export async function buyProduct(productId: string): Promise<IapBuyResult> {
  * react-native-iap v15 exposes `getAvailablePurchases()` which under the
  * hood calls StoreKit2 `Transaction.currentEntitlements`.
  */
-export async function restorePurchases(): Promise<Array<{ transactionId: string; productId: string }>> {
+export async function restorePurchases(): Promise<Array<{ transactionId: string; productId: string; jwsRepresentation?: string }>> {
   const iap = loadModule();
   if (!iap) {
     throw new Error(
@@ -347,7 +390,7 @@ export async function restorePurchases(): Promise<Array<{ transactionId: string;
     throw new Error(e?.message || 'Failed to fetch restored purchases.');
   }
 
-  const out: Array<{ transactionId: string; productId: string }> = [];
+  const out: Array<{ transactionId: string; productId: string; jwsRepresentation?: string }> = [];
   for (const p of purchases) {
     const tid =
       p?.transactionId ??
@@ -356,7 +399,14 @@ export async function restorePurchases(): Promise<Array<{ transactionId: string;
       p?.transactionIdentifier ??
       '';
     const pid = p?.productId ?? p?.id ?? '';
-    if (tid && pid) out.push({ transactionId: String(tid), productId: String(pid) });
+    const jws = _extractJws(p);  // Build 37: include JWS for backend local verify.
+    if (tid && pid) {
+      out.push({
+        transactionId: String(tid),
+        productId: String(pid),
+        jwsRepresentation: jws,
+      });
+    }
     // Mark transaction finished so StoreKit doesn't keep replaying it.
     try {
       if (typeof iap.finishTransaction === 'function') {

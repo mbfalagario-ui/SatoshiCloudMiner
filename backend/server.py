@@ -18,6 +18,7 @@ import bcrypt
 import jwt as pyjwt
 
 from integrations.apple import verify_apple_transaction
+from integrations.apple import verify_apple_jws_transaction
 from integrations.blink import create_payout as blink_create_payout, get_payout as blink_get_payout
 from integrations import ai as ai_mod
 from integrations import btc_rate as btc_rate_mod
@@ -344,11 +345,17 @@ class WithdrawRequest(BaseModel):
 class BuyPackageRequest(BaseModel):
     package_id: str
     apple_transaction_id: Optional[str] = None  # iOS App Store transaction id from StoreKit
+    # Build 37 — StoreKit2 signed JWS receipt from react-native-iap v15+
+    # (purchase.purchaseToken on iOS). When present, the backend verifies
+    # the JWS LOCALLY against Apple Root CA — no Apple API call, no
+    # propagation race. Preferred path.
+    apple_jws_representation: Optional[str] = None
 
 
 class RestorePurchaseItem(BaseModel):
     transaction_id: str
     product_id: str
+    apple_jws_representation: Optional[str] = None  # Build 37 (see above)
 
 
 class RestorePurchasesRequest(BaseModel):
@@ -958,10 +965,30 @@ async def buy_package(
                 status_code=400, detail="This Apple transaction was already redeemed."
             )
         try:
-            apple_info = verify_apple_transaction(
-                payload.apple_transaction_id,
-                expected_product_id=pkg["id"],
-            )
+            # Build 37: prefer local JWS verification (no Apple API race).
+            # Fall back to transactionId lookup (now with retry/backoff)
+            # if no JWS is provided or JWS verification raises.
+            apple_info = None
+            if payload.apple_jws_representation:
+                try:
+                    apple_info = verify_apple_jws_transaction(
+                        payload.apple_jws_representation,
+                        expected_product_id=pkg["id"],
+                    )
+                    logger.info(
+                        "Apple IAP: JWS verification succeeded for user=%s pkg=%s tid=%s",
+                        current_user.get("id"), pkg["id"], payload.apple_transaction_id,
+                    )
+                except Exception as jws_err:
+                    logger.info(
+                        "Apple IAP: JWS path failed for user=%s pkg=%s, falling back to API lookup: %s",
+                        current_user.get("id"), pkg["id"], jws_err,
+                    )
+            if apple_info is None:
+                apple_info = verify_apple_transaction(
+                    payload.apple_transaction_id,
+                    expected_product_id=pkg["id"],
+                )
         except ValueError as e:
             # Apple Build #33: any IAP validation failure (bundle id
             # mismatch, product id mismatch, expired transaction,
@@ -1159,8 +1186,22 @@ async def restore_purchases(
 
         # Verify with Apple before granting (Build #33 hardening:
         # generic error messages, no raw exception leakage).
+        # Build 37: prefer JWS local verification if provided.
         try:
-            apple_info = verify_apple_transaction(tid, expected_product_id=pkg["id"])
+            apple_info = None
+            if item.apple_jws_representation:
+                try:
+                    apple_info = verify_apple_jws_transaction(
+                        item.apple_jws_representation,
+                        expected_product_id=pkg["id"],
+                    )
+                except Exception as jws_err:
+                    logger.info(
+                        "restore: JWS path failed for tid=%s pid=%s, falling back to API lookup: %s",
+                        tid, pid, jws_err,
+                    )
+            if apple_info is None:
+                apple_info = verify_apple_transaction(tid, expected_product_id=pkg["id"])
         except ValueError as e:
             logger.warning("restore: apple verify refused tid=%s pid=%s: %s", tid, pid, e)
             errors.append({"product_id": pid, "reason": "apple_verification_refused"})
