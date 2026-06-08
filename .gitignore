@@ -96,3 +96,13 @@ backend/keys/
 *.cer
 *.p12
 *.pem
+
+# EXCEPTION: Apple Root CA G3 is a PUBLIC certificate (downloaded from
+# https://www.apple.com/certificateauthority/AppleRootCA-G3.cer) used as
+# the trust anchor for StoreKit-2 JWS chain verification on Fly.io. It
+# contains NO private material. Without this negation rule the global
+# `*.cer` line above silently excludes it from git → it never reaches
+# the Fly build context → the Dockerfile's `COPY certs/` lands empty →
+# JWS verification crashes with "Apple Root CA certificate not found".
+# This is exactly the Build 37 IAP P0 failure mode. Keep this exception.
+!backend/certs/AppleRootCA-G3.cer
