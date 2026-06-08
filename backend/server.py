@@ -1036,6 +1036,41 @@ def _buydiag_emit(diag: Dict[str, Any]) -> None:
             pass
 
 
+async def _buydiag_persist(diag: Dict[str, Any]) -> None:
+    """Persist ONE sanitized BUYDIAG record to the temporary
+    `purchase_diagnostics` Mongo collection so an operator can retrieve
+    the most recent forensic block via the admin-only endpoint
+    `GET /api/admin/iap/purchase-diagnostics/latest` — without having to
+    pull Fly logs manually.
+
+    Safety contract (matches the in-memory diag fields):
+      * Stores ONLY the sanitized fields built by `_buydiag_init` + the
+        decision-point mutations made inside `buy_package`.
+      * Stores NO full JWS, NO Apple keys/tokens, NO bearer tokens, NO
+        .p8 contents, NO raw Apple API response bodies.
+      * A `created_at_dt` BSON datetime field is added so a Mongo TTL
+        index can auto-purge records after 14 days (set in startup).
+
+    This function NEVER raises — diagnostic persistence MUST NEVER be
+    able to break a real purchase.
+    """
+    try:
+        # Copy so we don't mutate the caller's dict.
+        doc = dict(diag)
+        # Use a real BSON datetime for the TTL index (the ISO `ts` string
+        # alone is fine for humans but TTL needs a date type).
+        doc["created_at_dt"] = datetime.now(timezone.utc)
+        await db.purchase_diagnostics.insert_one(doc)
+    except Exception as e:
+        try:
+            logger.warning(
+                "BUYDIAG persist failed for trace=%s err=%s",
+                diag.get("purchase_trace_id"), e,
+            )
+        except Exception:
+            pass
+
+
 @api.post("/packages/buy")
 async def buy_package(
     payload: BuyPackageRequest,
@@ -1349,6 +1384,7 @@ async def buy_package(
         raise
     finally:
         _buydiag_emit(diag)
+        await _buydiag_persist(diag)
 
 
 # ---------------------------- Routes: Restore Purchases ----------------------------
@@ -2570,6 +2606,90 @@ async def admin_iap_selfcheck(
         "ready_for_production": (
             cfg.enabled and require_real and apple_status == "ok"
         ),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# BUYDIAG — Admin-only retrieval endpoint (Build 37 forensic diagnostic).
+#
+# Returns the N most recent sanitized BUYDIAG records from the
+# `purchase_diagnostics` collection. This is the no-Fly-CLI path for
+# the operator to read the diagnostic block produced by their TestFlight
+# purchase attempt without scraping log lines.
+#
+# Returns SAFE-ONLY fields — the same sanitized fields stored by
+# `_buydiag_persist`. No full JWS, no Apple keys, no tokens, no .p8.
+# Records auto-purge after 14 days via the TTL index on `created_at_dt`.
+#
+# Operator usage:
+#   curl -sH "Authorization: Bearer <ADMIN_TOKEN>" \
+#        https://api.hashratecloudminer.com/api/admin/iap/purchase-diagnostics/latest
+#
+# Optional ?limit=N (default 1, max 25).
+# ─────────────────────────────────────────────────────────────────────
+@api.get("/admin/iap/purchase-diagnostics/latest")
+async def admin_iap_purchase_diagnostics_latest(
+    limit: int = 1,
+    current_user: Dict[str, Any] = Depends(get_current_admin),
+):
+    n = max(1, min(int(limit or 1), 25))
+    try:
+        cursor = (
+            db.purchase_diagnostics
+            .find({}, {"_id": 0, "created_at_dt": 0})
+            .sort("created_at_dt", -1)
+            .limit(n)
+        )
+        records = await cursor.to_list(length=n)
+    except Exception as e:
+        logger.warning("purchase-diagnostics/latest read failed: %s", e)
+        records = []
+
+    # Defence in depth — explicitly whitelist the safe fields we will
+    # return, even though `_buydiag_persist` already stores only safe
+    # fields. Anything not in this whitelist is dropped.
+    safe_fields = (
+        "purchase_trace_id",
+        "ts",
+        "backend_build_tag",
+        "user_id",
+        "user_email",
+        "package_id",
+        "user_agent",
+        "x_client_platform",
+        "apple_transaction_id_present",
+        "apple_transaction_id_masked",
+        "apple_jws_present",
+        "apple_jws_length",
+        "apple_jws_first4",
+        "apple_jws_dot_count",
+        "apple_jws_sha256_prefix",
+        "verification_path_attempted",
+        "jws_verify_result",
+        "jws_verify_exception_class",
+        "jws_verify_reason",
+        "api_lookup_attempted",
+        "api_lookup_result",
+        "api_lookup_exception_class",
+        "api_lookup_reason",
+        "verification_path_final",
+        "apple_environment_returned",
+        "apple_product_id_returned",
+        "apple_bundle_id_returned",
+        "apple_mocked",
+        "entitlement_grant_attempted",
+        "entitlement_grant_success",
+        "transaction_write_attempted",
+        "transaction_write_success",
+        "final_http_status",
+        "final_response_category",
+    )
+    scrubbed = [{k: r.get(k) for k in safe_fields} for r in records]
+
+    return {
+        "backend_diag_build_tag": BACKEND_DIAG_BUILD_TAG,
+        "count": len(scrubbed),
+        "records": scrubbed,
     }
 
 
@@ -4138,6 +4258,14 @@ async def startup():
         await db.ad_views.create_index([("user_id", 1), ("day_bucket", 1)])
         await db.ad_views.create_index("transaction_id", unique=True)
         await db.faqs.create_index("id", unique=True)
+        # BUYDIAG (temporary) — index by created_at_dt with 14-day TTL so
+        # the diagnostic collection self-purges and never grows unbounded.
+        # Also index purchase_trace_id for fast latest-N lookups.
+        await db.purchase_diagnostics.create_index(
+            "created_at_dt", expireAfterSeconds=14 * 24 * 3600,
+        )
+        await db.purchase_diagnostics.create_index([("created_at_dt", -1)])
+        await db.purchase_diagnostics.create_index("purchase_trace_id")
     except Exception as e:
         logger.warning("Index creation issue: %s", e)
 
