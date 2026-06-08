@@ -66,10 +66,11 @@ export default function Profile() {
   };
 
   const items: { icon: any; label: string; to?: string; testID: string; onPress?: () => void; badge?: number }[] = [
-    { icon: 'hardware-chip-outline', label: 'My boosts', to: '/machines', testID: 'profile-miners' },
+    { icon: 'hardware-chip-outline', label: 'My Boosts', to: '/machines', testID: 'profile-miners' },
     { icon: 'time-outline', label: 'Transaction history', to: '/transactions', testID: 'profile-history' },
     { icon: 'gift-outline', label: 'Daily check-in', to: '/daily', testID: 'profile-daily' },
-    { icon: 'people-outline', label: 'Invite friends', to: '/referral', testID: 'profile-referral' },
+    { icon: 'people-outline', label: 'Invite Friends', to: '/referral', testID: 'profile-referral' },
+    { icon: 'help-circle-outline', label: 'Help & FAQs', to: '/faq', testID: 'profile-faq' },
     {
       icon: 'chatbubbles',
       label: 'Premium Support',

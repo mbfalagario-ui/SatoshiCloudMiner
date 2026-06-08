@@ -57,7 +57,16 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=Fals
 # cached value. The legacy hardcoded 65000.0 was removed in Build #18.
 SATS_PER_BTC = 100_000_000
 DAILY_CHECKIN_REWARD_USD = 0.05  # $0.05 awarded as BTC equivalent
-REFERRAL_BONUS_USD = 0.50
+# Referral economics — Build 36 remediation:
+# • Reward is a fixed sats amount (NOT USD-pegged) so the user-facing
+#   reward number remains stable across BTC price swings (per Apple's
+#   "no guaranteed earnings" guidance — sats are a deterministic unit).
+# • Both referrer AND new referred user receive the same one-time bonus.
+# • Hard cap of MAX_REFERRAL_REWARDS rewarded referrals per referrer.
+#   Additional sign-ups using the code are allowed but earn no further
+#   bonuses. This prevents farming and bounds maximum payout per account.
+REFERRAL_BONUS_SATS = 1500
+MAX_REFERRAL_REWARDS = 10
 
 # Withdrawal/redeem limits — Build #22+ (AdMob / Virtual Hashrate model).
 # All monetary settings exposed as ENV knobs so the operator can tune
@@ -139,7 +148,7 @@ SHOP_PACKAGES = [
     },
     {
         "id": "pro_499",
-        "name": "Pro Rig",
+        "name": "Pro Booster",
         "tagline": "Most popular",
         "offer_text": None,
         "price_usd": 4.99,
@@ -152,7 +161,7 @@ SHOP_PACKAGES = [
     },
     {
         "id": "elite_999",
-        "name": "Elite Rig",
+        "name": "Elite Booster",
         "tagline": "Save 25%",
         "offer_text": None,
         "price_usd": 9.99,
@@ -165,7 +174,7 @@ SHOP_PACKAGES = [
     },
     {
         "id": "ultra_1999",
-        "name": "Ultra Rig",
+        "name": "Ultra Booster",
         "tagline": "Best value",
         "offer_text": None,
         "price_usd": 19.99,
@@ -178,7 +187,7 @@ SHOP_PACKAGES = [
     },
     {
         "id": "mega_4999",
-        "name": "Mega Rig",
+        "name": "Mega Booster",
         "tagline": "Tera-class boost",
         "offer_text": None,
         "price_usd": 49.99,
@@ -191,7 +200,7 @@ SHOP_PACKAGES = [
     },
     {
         "id": "giga_9999",
-        "name": "Giga Rig",
+        "name": "Giga Booster",
         "tagline": "Industrial scale",
         "offer_text": None,
         "price_usd": 99.99,
@@ -204,7 +213,7 @@ SHOP_PACKAGES = [
     },
     {
         "id": "titan_14999",
-        "name": "Titan Rig",
+        "name": "Titan Booster",
         "tagline": "Premium scale",
         "offer_text": "Buy 1, Get 1 free",
         "price_usd": 149.99,
@@ -217,7 +226,7 @@ SHOP_PACKAGES = [
     },
     {
         "id": "colossus_19999",
-        "name": "Colossus Rig",
+        "name": "Colossus Booster",
         "tagline": "Maximum hashpower",
         "offer_text": "Buy 1, Get 1 free",
         "price_usd": 199.99,
@@ -668,29 +677,46 @@ async def register(payload: UserCreate):
     # via daily check-ins (free) and rewarded video ads (free) before
     # purchasing any mining plans. Streak starts at 0.
 
-    # Optional referral
+    # Optional referral. Build 36 referral model:
+    # • Reward = REFERRAL_BONUS_SATS (1500) to BOTH referrer + new user.
+    # • Hard cap of MAX_REFERRAL_REWARDS (10) per referrer; additional
+    #   sign-ups using the code are allowed but earn no further bonus.
+    # • Self-referral is impossible at signup (user doesn't exist yet).
     referred_by = None
+    referral_bonus_to_new_user = 0  # sats actually awarded to new user
     if payload.referral_code:
-        referrer = await db.users.find_one({"referral_code": payload.referral_code.upper()})
+        referrer = await db.users.find_one(
+            {"referral_code": payload.referral_code.upper()}
+        )
         if referrer:
             referred_by = referrer["id"]
-            # Bonus to referrer
-            await db.users.update_one(
-                {"id": referrer["id"]},
-                {"$inc": {"balance_btc": usd_to_btc(REFERRAL_BONUS_USD)}},
-            )
-            await db.transactions.insert_one(
-                {
-                    "id": str(uuid.uuid4()),
-                    "user_id": referrer["id"],
-                    "type": "referral",
-                    "amount_usd": REFERRAL_BONUS_USD,
-                    "amount_btc": usd_to_btc(REFERRAL_BONUS_USD),
-                    "status": "completed",
-                    "description": "Referral bonus from new user",
-                    "created_at": now.isoformat(),
-                }
-            )
+            rewarded_count = int(referrer.get("rewarded_referral_count", 0) or 0)
+            if rewarded_count < MAX_REFERRAL_REWARDS:
+                bonus_btc = sats_to_btc(REFERRAL_BONUS_SATS)
+                # 1) Credit the referrer.
+                await db.users.update_one(
+                    {"id": referrer["id"]},
+                    {
+                        "$inc": {
+                            "balance_btc": bonus_btc,
+                            "rewarded_referral_count": 1,
+                        }
+                    },
+                )
+                await db.transactions.insert_one(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "user_id": referrer["id"],
+                        "type": "referral",
+                        "amount_usd": btc_to_usd(bonus_btc),
+                        "amount_btc": bonus_btc,
+                        "amount_sats": REFERRAL_BONUS_SATS,
+                        "status": "completed",
+                        "description": f"Referral bonus — {REFERRAL_BONUS_SATS} sats (new sign-up via your code)",
+                        "created_at": now.isoformat(),
+                    }
+                )
+                referral_bonus_to_new_user = REFERRAL_BONUS_SATS
 
     user_doc = {
         "id": user_id,
@@ -698,7 +724,9 @@ async def register(payload: UserCreate):
         "password_hash": hash_password(payload.password),
         "referral_code": ref_code,
         "referred_by": referred_by,
-        "balance_btc": 0.0,
+        "balance_btc": sats_to_btc(referral_bonus_to_new_user)
+        if referral_bonus_to_new_user
+        else 0.0,
         "lifetime_earnings_btc": 0.0,
         "last_accrual_at": now.isoformat(),
         "last_checkin_at": None,
@@ -710,10 +738,35 @@ async def register(payload: UserCreate):
         "cross_sell_consumed_skus": [],
         "auto_checkin": False,  # Build #22+: ladder is manual to preserve UX
         "auto_reinvest": False,
+        # Build 36 referral fields. These default to safe values for new
+        # users; existing-user docs without these fields are treated as 0.
+        "rewarded_referral_count": 0,
+        "redeemed_referral_code": payload.referral_code.upper()
+        if (referred_by and payload.referral_code)
+        else None,
         "created_at": now.isoformat(),
     }
 
     await db.users.insert_one(user_doc)
+
+    # If the new user got a referral bonus at signup, log a transaction
+    # so it's visible in their transaction history (matching the referrer's
+    # transaction record).
+    if referral_bonus_to_new_user:
+        bonus_btc_new = sats_to_btc(referral_bonus_to_new_user)
+        await db.transactions.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "type": "referral",
+                "amount_usd": btc_to_usd(bonus_btc_new),
+                "amount_btc": bonus_btc_new,
+                "amount_sats": referral_bonus_to_new_user,
+                "status": "completed",
+                "description": f"Referral bonus — {referral_bonus_to_new_user} sats (welcome bonus for using a friend's code)",
+                "created_at": now.isoformat(),
+            }
+        )
 
     user_public = serialize_user_public(user_doc)
     token = create_access_token(user_id, email)
@@ -1849,15 +1902,175 @@ async def daily_checkin(current_user: Dict[str, Any] = Depends(get_current_user)
 
 
 # ---------------------------- Routes: Referral ----------------------------
+class ReferralRedeem(BaseModel):
+    referral_code: str
+
+
 @api.get("/referral")
 async def referral(current_user: Dict[str, Any] = Depends(get_current_user)):
     user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
-    count = await db.users.count_documents({"referred_by": current_user["id"]})
+    # `invited_count` = how many users signed up under this user's code
+    # (may include sign-ups that didn't earn a bonus because the cap was
+    # already hit). `rewarded_count` is the bonus-bearing subset.
+    invited_count = await db.users.count_documents(
+        {"referred_by": current_user["id"]}
+    )
+    rewarded_count = int(user.get("rewarded_referral_count", 0) or 0)
+    remaining = max(0, MAX_REFERRAL_REWARDS - rewarded_count)
     return {
         "code": user.get("referral_code"),
-        "invited_count": count,
-        "bonus_per_invite_usd": REFERRAL_BONUS_USD,
-        "share_text": f"Mine Bitcoin in the cloud — join Hashrate Cloud Miner with my code {user.get('referral_code')} for a bonus.",
+        "invited_count": invited_count,
+        "rewarded_count": rewarded_count,
+        "max_referrals": MAX_REFERRAL_REWARDS,
+        "bonus_sats": REFERRAL_BONUS_SATS,
+        "remaining_rewards": remaining,
+        # Whether THIS user has already redeemed an inbound referral
+        # (either at signup or via /referral/redeem). Used by the client
+        # to hide the "Enter a code" input once it's been used.
+        "has_redeemed_inbound": bool(
+            user.get("redeemed_referral_code")
+            or user.get("referred_by")
+        ),
+        "share_text": (
+            f"Mine Bitcoin in the cloud — join Hashrate Cloud Miner with "
+            f"my code {user.get('referral_code')} and we both get "
+            f"{REFERRAL_BONUS_SATS} sats."
+        ),
+    }
+
+
+@api.post("/referral/redeem")
+async def referral_redeem(
+    payload: ReferralRedeem,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Allow an existing user to redeem a friend's referral code AFTER
+    sign-up. Awards REFERRAL_BONUS_SATS to BOTH this user and the
+    referrer (subject to the referrer's MAX_REFERRAL_REWARDS cap).
+
+    Rejections (HTTP 400):
+      • code is empty / malformed
+      • code is the user's own code (self-referral)
+      • this user has already redeemed an inbound code (only one allowed)
+      • code doesn't match any user
+      • referrer has already hit the bonus cap (the user is still
+        recorded as referred but no bonus is paid to either side, mirroring
+        the signup-flow behavior — to be transparent we return a flag so
+        the client can show a clear message)
+    """
+    code = (payload.referral_code or "").strip().upper()
+    if not code or len(code) < 4 or len(code) > 16:
+        raise HTTPException(status_code=400, detail="Invalid referral code")
+
+    me_doc = await db.users.find_one({"id": current_user["id"]})
+    if not me_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Self-referral
+    if code == (me_doc.get("referral_code") or "").upper():
+        raise HTTPException(
+            status_code=400, detail="You cannot use your own referral code"
+        )
+
+    # Already redeemed an inbound code (signup-time or via this endpoint)
+    if me_doc.get("redeemed_referral_code") or me_doc.get("referred_by"):
+        raise HTTPException(
+            status_code=400,
+            detail="You have already redeemed a referral code",
+        )
+
+    referrer = await db.users.find_one({"referral_code": code})
+    if not referrer:
+        raise HTTPException(status_code=400, detail="Referral code not found")
+
+    if referrer["id"] == current_user["id"]:
+        # Defensive — also covered by the self-referral check above.
+        raise HTTPException(
+            status_code=400, detail="You cannot use your own referral code"
+        )
+
+    rewarded_count = int(referrer.get("rewarded_referral_count", 0) or 0)
+    cap_hit = rewarded_count >= MAX_REFERRAL_REWARDS
+
+    now = now_utc()
+    if cap_hit:
+        # Bind the relationship but do NOT pay a bonus. The user is told
+        # transparently that the code is valid but the cap was already
+        # reached.
+        await db.users.update_one(
+            {"id": current_user["id"]},
+            {
+                "$set": {
+                    "referred_by": referrer["id"],
+                    "redeemed_referral_code": code,
+                }
+            },
+        )
+        return {
+            "ok": True,
+            "bonus_sats": 0,
+            "cap_hit": True,
+            "message": (
+                "Code accepted, but this friend has already reached the "
+                f"maximum {MAX_REFERRAL_REWARDS} rewarded referrals. No "
+                "bonus was awarded."
+            ),
+        }
+
+    # Happy path — both sides credited.
+    bonus_btc = sats_to_btc(REFERRAL_BONUS_SATS)
+    # Credit the referrer.
+    await db.users.update_one(
+        {"id": referrer["id"]},
+        {
+            "$inc": {
+                "balance_btc": bonus_btc,
+                "rewarded_referral_count": 1,
+            }
+        },
+    )
+    await db.transactions.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "user_id": referrer["id"],
+            "type": "referral",
+            "amount_usd": btc_to_usd(bonus_btc),
+            "amount_btc": bonus_btc,
+            "amount_sats": REFERRAL_BONUS_SATS,
+            "status": "completed",
+            "description": f"Referral bonus — {REFERRAL_BONUS_SATS} sats (friend redeemed your code)",
+            "created_at": now.isoformat(),
+        }
+    )
+    # Credit the redeeming user + bind the relationship.
+    await db.users.update_one(
+        {"id": current_user["id"]},
+        {
+            "$inc": {"balance_btc": bonus_btc},
+            "$set": {
+                "referred_by": referrer["id"],
+                "redeemed_referral_code": code,
+            },
+        },
+    )
+    await db.transactions.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "user_id": current_user["id"],
+            "type": "referral",
+            "amount_usd": btc_to_usd(bonus_btc),
+            "amount_btc": bonus_btc,
+            "amount_sats": REFERRAL_BONUS_SATS,
+            "status": "completed",
+            "description": f"Referral bonus — {REFERRAL_BONUS_SATS} sats (welcome bonus for using a friend's code)",
+            "created_at": now.isoformat(),
+        }
+    )
+    return {
+        "ok": True,
+        "bonus_sats": REFERRAL_BONUS_SATS,
+        "cap_hit": False,
+        "message": f"Welcome bonus of {REFERRAL_BONUS_SATS} sats credited.",
     }
 
 
@@ -3240,7 +3453,7 @@ SEEDED_FAQS: List[Dict[str, Any]] = [
     {"id": "faq_24h_cooldown", "q": "Why is there a 24-hour cooldown on redeeming?",
      "a": "To keep the Lightning Network healthy and prevent abuse, each user can submit one redeem request per 24 hours. The cooldown starts the moment your redeem is broadcast."},
     {"id": "faq_iap_bonus", "q": "What is the one-time hashrate boost bonus?",
-     "a": "Every mining plan grants a one-time free hashrate bonus on your FIRST purchase of that plan: starting at +15% on the entry tier and going up to +50% on the flagship Colossus Rig. The bonus stacks with the plan's base hashrate."},
+     "a": "Every Booster pack grants a one-time free hashrate bonus on your FIRST purchase of that pack: starting at +15% on the entry tier and going up to +50% on the flagship Colossus Booster. The bonus stacks with the pack's base hashrate."},
     {"id": "faq_cross_sell", "q": "What is the +100% More Computing Power banner?",
      "a": "It's a dynamic offer that mirrors your current hashrate at a 25% discount. Tap it to double your active hashrate. Each time you purchase the banner offer, the next-tier-up SKU appears at the same 25% discount."},
     {"id": "faq_safety", "q": "Is my account safe?",

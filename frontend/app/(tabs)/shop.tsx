@@ -100,9 +100,16 @@ export default function Store() {
         }
         const result = await buyProduct(pkg.id);
         if (!result.applePurchase || !result.transactionId) {
-          // StoreKit closed without a successful purchase (user
-          // cancelled, network error, payment declined). Do NOT
-          // call the backend.
+          // StoreKit closed without a successful purchase.
+          // Per Apple Review feedback (Build 35 → Build 36): show an
+          // explicit message so the user knows nothing was charged,
+          // clear any selection-locking state, and allow them to pick
+          // a different Booster immediately. We do NOT call the
+          // backend, do NOT grant the Booster, and do NOT write any
+          // transaction record.
+          Alert.alert('Purchase cancelled', 'No charge was made.');
+          // Reset selection so user can pick a different pack right away.
+          setSelectedId(null);
           return;
         }
         appleTransactionId = result.transactionId;
@@ -123,12 +130,16 @@ export default function Store() {
       await refresh();
     } catch (e: any) {
       const msg = e?.message || 'Try again later';
-      // Don't show the alert if the user cancelled the StoreKit sheet
+      // Don't show a "Purchase failed" alert if the user cancelled —
+      // show the friendlier cancellation alert instead and reset state.
       const isCancellation =
         /cancel/i.test(msg) ||
         /E_USER_CANCELLED/i.test(msg) ||
         /SKErrorPaymentCancelled/i.test(msg);
-      if (!isCancellation) {
+      if (isCancellation) {
+        Alert.alert('Purchase cancelled', 'No charge was made.');
+        setSelectedId(null);
+      } else {
         Alert.alert('Purchase failed', msg);
       }
     } finally {
