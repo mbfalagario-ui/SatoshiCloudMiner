@@ -54,23 +54,25 @@ const TEST_INTERSTITIAL_IOS = 'ca-app-pub-3940256099942544/4411468910';
 // Production iOS unit IDs. Overridden by env vars baked in via the EAS
 // profile (eas.json `env` block).
 //
-// Sentinel: setting the env var to an EXPLICIT empty string ("") means
-// "this ad format is intentionally disabled for this build" — used by the
-// `appstore-review` profile when a production unit ID for that format
-// hasn't been provisioned yet. The Apple App Store forbids submitting
-// builds that serve Google's public test ad unit IDs, so we disable the
-// format entirely rather than fall back to test IDs in production.
+// Per-format kill-switch sentinels (used by the `appstore-review` profile
+// when a production unit ID for that format hasn't been provisioned yet —
+// the Apple App Store forbids submitting builds that serve Google's
+// public test ad unit IDs, so we disable the format entirely rather than
+// fall back to test IDs in production):
+//   - EXPO_PUBLIC_ADMOB_REWARDED_DISABLED     = "1"  → rewarded disabled
+//   - EXPO_PUBLIC_ADMOB_INTERSTITIAL_DISABLED = "1"  → interstitial disabled
 //
-// Distinguishes 3 states:
-//   - undefined  → env var unset → fall back to TEST unit (dev workflow)
-//   - ""         → env var explicitly empty → DISABLED (review-safe)
-//   - non-empty  → real production unit ID
-const _rewardedEnvRaw = process.env.EXPO_PUBLIC_ADMOB_REWARDED_IOS;
-const _interstitialEnvRaw = process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_IOS;
-const REWARDED_DISABLED = _rewardedEnvRaw === '';
-const INTERSTITIAL_DISABLED = _interstitialEnvRaw === '';
-const PROD_REWARDED_IOS = _rewardedEnvRaw || TEST_REWARDED_IOS;
-const PROD_INTERSTITIAL_IOS = _interstitialEnvRaw || TEST_INTERSTITIAL_IOS;
+// If the disabled flag is NOT set, the corresponding unit-ID env var is
+// used; if neither is set, dev workflow falls back to Google's official
+// test unit IDs (safe to click during development only).
+const REWARDED_DISABLED =
+  process.env.EXPO_PUBLIC_ADMOB_REWARDED_DISABLED === '1';
+const INTERSTITIAL_DISABLED =
+  process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_DISABLED === '1';
+const PROD_REWARDED_IOS =
+  process.env.EXPO_PUBLIC_ADMOB_REWARDED_IOS || TEST_REWARDED_IOS;
+const PROD_INTERSTITIAL_IOS =
+  process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_IOS || TEST_INTERSTITIAL_IOS;
 
 // Max ms the SDK is given to load an ad before we surface a user-visible
 // error instead of leaving the Watch button stuck on "Loading…".

@@ -47,7 +47,8 @@
       "env": {
         "EXPO_PUBLIC_BACKEND_URL": "https://api.hashratecloudminer.com",
         "EXPO_PUBLIC_ADMOB_REWARDED_IOS": "ca-app-pub-6035003811280283/1502046287",
-        "EXPO_PUBLIC_ADMOB_INTERSTITIAL_IOS": "",
+        "EXPO_PUBLIC_ADMOB_INTERSTITIAL_IOS": "disabled-no-prod-unit-provisioned",
+        "EXPO_PUBLIC_ADMOB_INTERSTITIAL_DISABLED": "1",
         "EXPO_PUBLIC_AD_LOAD_TIMEOUT_MS": "15000"
       },
       "ios": {
