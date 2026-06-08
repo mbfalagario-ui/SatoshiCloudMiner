@@ -13,6 +13,8 @@ import uuid
 import logging
 import secrets
 import string
+import json
+import hashlib
 
 import bcrypt
 import jwt as pyjwt
@@ -897,6 +899,143 @@ async def get_packages():
     return {"packages": [_enrich_package(p) for p in SHOP_PACKAGES]}
 
 
+# ─────────────────────────────────────────────────────────────────────
+# BUYDIAG — TEMPORARY forensic instrumentation for Build 37 IAP failure.
+#
+# Emits exactly ONE compact JSON log line per /api/packages/buy attempt,
+# prefixed with the literal token `BUYDIAG ` so it can be grepped from
+# Fly logs in O(1):
+#
+#     flyctl logs --app <appname> | grep BUYDIAG
+#
+# SAFE-ONLY FIELDS — this MUST NEVER log:
+#   * the full JWS body
+#   * the Apple .p8 key contents
+#   * any bearer / JWT / auth token
+#   * Apple secrets of any kind
+#   * full raw Apple API response (only sanitized category)
+#
+# What it captures (purpose: pinpoint the exact verification path taken):
+#   purchase_trace_id, user_id/email, package_id,
+#   apple_transaction_id presence + masked form,
+#   JWS presence, length, dot-count, first-4-chars (to discriminate
+#     JWS "eyJ…" from PKCS7-receipt "MII…"), 16-hex SHA-256 prefix
+#     (correlation only — body never reconstructible),
+#   verification path attempted/final (jws_local | api_lookup | both | neither),
+#   JWS verify outcome + sanitized exception class/reason,
+#   API lookup outcome + sanitized exception class/reason,
+#   apple env / product id / bundle id returned (mismatches stand out),
+#   entitlement grant + transaction write attempt/success,
+#   final HTTP status + sanitized response category.
+#
+# This block exists to identify the exact root cause of the Build 37
+# "Apple could not verify this purchase" TestFlight failure. REMOVE
+# AFTER FORENSIC DIAGNOSIS IS COMPLETE.
+# ─────────────────────────────────────────────────────────────────────
+BACKEND_DIAG_BUILD_TAG = "build37-buydiag-1"
+
+
+def _buydiag_mask_tid(tid: Optional[str]) -> Optional[str]:
+    """Mask an Apple transactionId for safe logging."""
+    if not tid:
+        return None
+    s = str(tid)
+    if len(s) <= 8:
+        return "***"
+    return f"{s[:4]}…{s[-4:]}"
+
+
+def _buydiag_jws_fingerprint(jws: Optional[str]) -> Dict[str, Any]:
+    """SAFE fingerprint of the JWS string — never the body itself.
+
+    `first4` is the only "body-shaped" field and it deliberately captures
+    just enough to distinguish a real JWS header (`eyJ…`, base64url of
+    `{"alg":...`) from a StoreKit-1 PKCS7 App Receipt (`MII…`, DER
+    SEQUENCE). The transaction payload starts at the second dot, which
+    we never include.
+    """
+    if not jws:
+        return {
+            "present": False, "length": 0, "first4": None,
+            "dot_count": 0, "sha256_prefix": None,
+        }
+    return {
+        "present": True,
+        "length": len(jws),
+        "first4": jws[:4],
+        "dot_count": jws.count("."),
+        "sha256_prefix": hashlib.sha256(jws.encode("utf-8")).hexdigest()[:16],
+    }
+
+
+def _buydiag_sanitize(detail: Any) -> str:
+    """Truncate + stringify an arbitrary message for safe logging."""
+    s = "" if detail is None else str(detail)
+    return s[:240]
+
+
+def _buydiag_init(
+    trace_id: str,
+    user: Dict[str, Any],
+    payload: "BuyPackageRequest",
+    user_agent: Optional[str],
+    x_client_platform: Optional[str],
+) -> Dict[str, Any]:
+    fp = _buydiag_jws_fingerprint(payload.apple_jws_representation)
+    return {
+        "purchase_trace_id": trace_id,
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "backend_build_tag": BACKEND_DIAG_BUILD_TAG,
+        "user_id": user.get("id"),
+        "user_email": user.get("email"),
+        "package_id": payload.package_id,
+        "user_agent": (user_agent or "")[:120],
+        "x_client_platform": x_client_platform,
+        "apple_transaction_id_present": bool(payload.apple_transaction_id),
+        "apple_transaction_id_masked": _buydiag_mask_tid(payload.apple_transaction_id),
+        "apple_jws_present": fp["present"],
+        "apple_jws_length": fp["length"],
+        "apple_jws_first4": fp["first4"],
+        "apple_jws_dot_count": fp["dot_count"],
+        "apple_jws_sha256_prefix": fp["sha256_prefix"],
+        "verification_path_attempted": "neither",
+        "jws_verify_result": "skipped",
+        "jws_verify_exception_class": None,
+        "jws_verify_reason": None,
+        "api_lookup_attempted": False,
+        "api_lookup_result": "skipped",
+        "api_lookup_exception_class": None,
+        "api_lookup_reason": None,
+        "verification_path_final": "none",
+        "apple_environment_returned": None,
+        "apple_product_id_returned": None,
+        "apple_bundle_id_returned": None,
+        "apple_mocked": None,
+        "entitlement_grant_attempted": False,
+        "entitlement_grant_success": False,
+        "transaction_write_attempted": False,
+        "transaction_write_success": False,
+        "final_http_status": None,
+        "final_response_category": None,
+    }
+
+
+def _buydiag_emit(diag: Dict[str, Any]) -> None:
+    """Emit ONE compact JSON-line BUYDIAG record. Never raises."""
+    try:
+        line = json.dumps(diag, default=str, ensure_ascii=False)
+        # Truncate aggressively — Fly truncates long log lines anyway.
+        logger.info("BUYDIAG %s", line[:3500])
+    except Exception as e:  # diagnostic emit must never break purchases
+        try:
+            logger.warning(
+                "BUYDIAG emit failed for trace=%s err=%s",
+                diag.get("purchase_trace_id"), e,
+            )
+        except Exception:
+            pass
+
+
 @api.post("/packages/buy")
 async def buy_package(
     payload: BuyPackageRequest,
@@ -904,135 +1043,262 @@ async def buy_package(
     user_agent: Optional[str] = Header(None, alias="User-Agent"),
     x_client_platform: Optional[str] = Header(None, alias="X-Client-Platform"),
 ):
-    pkg = next((p for p in SHOP_PACKAGES if p["id"] == payload.package_id), None)
-    if not pkg:
-        raise HTTPException(status_code=404, detail="Package not found")
-
-    await accrue_earnings(current_user["id"])
-    now = now_utc()
-
-    # ------------------------------------------------------------------
-    # GUIDELINE 2.1(b) ENFORCEMENT — server-side StoreKit gate
-    # If the request originates from an iOS device, an Apple
-    # transactionId is REQUIRED. We refuse to grant the package
-    # otherwise — this prevents a buggy frontend from bypassing
-    # StoreKit and silently granting purchases for free (which is
-    # exactly the failure pattern Apple flagged on Build #24/#25).
-    # Heuristic: User-Agent contains "iPhone"/"iPad"/"iOS", OR the
-    # client explicitly sets X-Client-Platform: ios.
-    # ------------------------------------------------------------------
-    ua = (user_agent or "").lower()
-    is_ios_client = (
-        (x_client_platform or "").lower() == "ios"
-        or "iphone" in ua
-        or "ipad" in ua
-        or "ios" in ua
-        or "darwin" in ua
-        or "cfnetwork" in ua  # native iOS URL session
+    # ── BUYDIAG: temporary, safe-fields-only forensic instrumentation ──
+    purchase_trace_id = uuid.uuid4().hex[:12]
+    diag: Dict[str, Any] = _buydiag_init(
+        purchase_trace_id, current_user, payload, user_agent, x_client_platform,
     )
-    if is_ios_client and not payload.apple_transaction_id:
-        logger.warning(
-            "REFUSED iOS buy without StoreKit transactionId: user=%s pkg=%s ua=%s",
-            current_user.get("id"), payload.package_id, user_agent,
-        )
-        raise HTTPException(
-            status_code=402,
-            detail=(
-                "Apple In-App Purchase required. The native StoreKit payment "
-                "sheet must complete successfully before the package can be "
-                "granted. If the sheet did not appear, please ensure you are "
-                "signed in to the App Store and try again."
-            ),
-        )
 
-    # ------------------------------------------------------------------
-    # Apple IAP receipt validation
-    # If the client supplied an `apple_transaction_id` (it will when the
-    # purchase originated from StoreKit on iOS), we validate it against the
-    # App Store Server API and refuse the request if it doesn't match this
-    # package's product id. When Apple credentials aren't configured the
-    # verifier returns a MOCK response so the endpoint still works in dev.
-    # Each transactionId can only be redeemed ONCE.
-    # ------------------------------------------------------------------
-    apple_info: Dict[str, Any] = {"_mocked": True, "skipped": True}
-    if payload.apple_transaction_id:
-        # Idempotency: refuse a transactionId that's already been redeemed.
-        existing = await db.transactions.find_one(
-            {"apple_transaction_id": payload.apple_transaction_id}
+    try:
+        pkg = next((p for p in SHOP_PACKAGES if p["id"] == payload.package_id), None)
+        if not pkg:
+            raise HTTPException(status_code=404, detail="Package not found")
+
+        await accrue_earnings(current_user["id"])
+        now = now_utc()
+
+        # ------------------------------------------------------------------
+        # GUIDELINE 2.1(b) ENFORCEMENT — server-side StoreKit gate
+        # If the request originates from an iOS device, an Apple
+        # transactionId is REQUIRED. We refuse to grant the package
+        # otherwise — this prevents a buggy frontend from bypassing
+        # StoreKit and silently granting purchases for free (which is
+        # exactly the failure pattern Apple flagged on Build #24/#25).
+        # Heuristic: User-Agent contains "iPhone"/"iPad"/"iOS", OR the
+        # client explicitly sets X-Client-Platform: ios.
+        # ------------------------------------------------------------------
+        ua = (user_agent or "").lower()
+        is_ios_client = (
+            (x_client_platform or "").lower() == "ios"
+            or "iphone" in ua
+            or "ipad" in ua
+            or "ios" in ua
+            or "darwin" in ua
+            or "cfnetwork" in ua  # native iOS URL session
         )
-        if existing:
-            raise HTTPException(
-                status_code=400, detail="This Apple transaction was already redeemed."
+        if is_ios_client and not payload.apple_transaction_id:
+            logger.warning(
+                "REFUSED iOS buy without StoreKit transactionId: user=%s pkg=%s ua=%s",
+                current_user.get("id"), payload.package_id, user_agent,
             )
-        try:
-            # Build 37: prefer local JWS verification (no Apple API race).
-            # Fall back to transactionId lookup (now with retry/backoff)
-            # if no JWS is provided or JWS verification raises.
-            apple_info = None
-            if payload.apple_jws_representation:
-                try:
-                    apple_info = verify_apple_jws_transaction(
-                        payload.apple_jws_representation,
-                        expected_product_id=pkg["id"],
-                    )
-                    logger.info(
-                        "Apple IAP: JWS verification succeeded for user=%s pkg=%s tid=%s",
-                        current_user.get("id"), pkg["id"], payload.apple_transaction_id,
-                    )
-                except Exception as jws_err:
-                    logger.info(
-                        "Apple IAP: JWS path failed for user=%s pkg=%s, falling back to API lookup: %s",
-                        current_user.get("id"), pkg["id"], jws_err,
-                    )
-            if apple_info is None:
-                apple_info = verify_apple_transaction(
-                    payload.apple_transaction_id,
-                    expected_product_id=pkg["id"],
-                )
-        except ValueError as e:
-            # Apple Build #33: any IAP validation failure (bundle id
-            # mismatch, product id mismatch, expired transaction,
-            # missing credentials with APPLE_VERIFY_REQUIRED=1, etc.)
-            # is surfaced as 402 Payment Required — NOT 500 — because
-            # this is a client-actionable purchase issue rather than a
-            # server bug. We deliberately do NOT echo the raw exception
-            # to the client to avoid leaking internal details.
-            logger.warning("Apple IAP validation refused for user=%s pkg=%s: %s",
-                           current_user.get("id"), pkg["id"], e)
             raise HTTPException(
                 status_code=402,
                 detail=(
-                    "Apple could not verify this purchase. Please ensure "
-                    "you completed the App Store payment sheet and try "
-                    "again, or contact support if the issue persists."
-                ),
-            )
-        except Exception:
-            # Genuine unexpected backend failure — still refuse the
-            # purchase (Section 6: fail closed), but flag it as 503
-            # so we don't accidentally satisfy the rejection-resistant
-            # "no 500 errors" Apple rule.
-            logger.exception("Apple IAP verifier crashed unexpectedly")
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Purchase verification is temporarily unavailable. "
-                    "Please try again in a moment."
+                    "Apple In-App Purchase required. The native StoreKit payment "
+                    "sheet must complete successfully before the package can be "
+                    "granted. If the sheet did not appear, please ensure you are "
+                    "signed in to the App Store and try again."
                 ),
             )
 
-    # ------------------------------------------------------------------
-    # Entitlement products (no machine — just flip a user flag, e.g. ad_free)
-    # ------------------------------------------------------------------
-    entitlement = pkg.get("entitlement")
-    if entitlement == "ad_free":
-        already = bool(current_user.get("ad_free"))
-        if already:
-            raise HTTPException(status_code=400, detail="You already own the Ad-Free upgrade.")
-        await db.users.update_one(
-            {"id": current_user["id"]},
-            {"$set": {"ad_free": True, "ad_free_purchased_at": now.isoformat()}},
-        )
+        # ------------------------------------------------------------------
+        # Apple IAP receipt validation
+        # If the client supplied an `apple_transaction_id` (it will when the
+        # purchase originated from StoreKit on iOS), we validate it against the
+        # App Store Server API and refuse the request if it doesn't match this
+        # package's product id. When Apple credentials aren't configured the
+        # verifier returns a MOCK response so the endpoint still works in dev.
+        # Each transactionId can only be redeemed ONCE.
+        # ------------------------------------------------------------------
+        apple_info: Dict[str, Any] = {"_mocked": True, "skipped": True}
+        if payload.apple_transaction_id:
+            # Idempotency: refuse a transactionId that's already been redeemed.
+            existing = await db.transactions.find_one(
+                {"apple_transaction_id": payload.apple_transaction_id}
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=400, detail="This Apple transaction was already redeemed."
+                )
+            try:
+                # Build 37: prefer local JWS verification (no Apple API race).
+                # Fall back to transactionId lookup (now with retry/backoff)
+                # if no JWS is provided or JWS verification raises.
+                apple_info = None
+                if payload.apple_jws_representation:
+                    diag["verification_path_attempted"] = "jws_local"
+                    try:
+                        apple_info = verify_apple_jws_transaction(
+                            payload.apple_jws_representation,
+                            expected_product_id=pkg["id"],
+                        )
+                        diag["jws_verify_result"] = "success"
+                        diag["verification_path_final"] = "jws_local"
+                        logger.info(
+                            "Apple IAP: JWS verification succeeded for user=%s pkg=%s tid=%s",
+                            current_user.get("id"), pkg["id"], payload.apple_transaction_id,
+                        )
+                    except Exception as jws_err:
+                        diag["jws_verify_result"] = "failure"
+                        diag["jws_verify_exception_class"] = type(jws_err).__name__
+                        diag["jws_verify_reason"] = _buydiag_sanitize(jws_err)
+                        logger.info(
+                            "Apple IAP: JWS path failed for user=%s pkg=%s, falling back to API lookup: %s",
+                            current_user.get("id"), pkg["id"], jws_err,
+                        )
+                if apple_info is None:
+                    diag["api_lookup_attempted"] = True
+                    diag["verification_path_attempted"] = (
+                        "jws_then_api"
+                        if diag["verification_path_attempted"] == "jws_local"
+                        else "api_lookup"
+                    )
+                    apple_info = verify_apple_transaction(
+                        payload.apple_transaction_id,
+                        expected_product_id=pkg["id"],
+                    )
+                    diag["api_lookup_result"] = "success"
+                    diag["verification_path_final"] = (
+                        "jws_then_api"
+                        if diag["jws_verify_result"] == "failure"
+                        else "api_lookup"
+                    )
+            except ValueError as e:
+                # Apple Build #33: any IAP validation failure (bundle id
+                # mismatch, product id mismatch, expired transaction,
+                # missing credentials with APPLE_VERIFY_REQUIRED=1, etc.)
+                # is surfaced as 402 Payment Required — NOT 500 — because
+                # this is a client-actionable purchase issue rather than a
+                # server bug. We deliberately do NOT echo the raw exception
+                # to the client to avoid leaking internal details.
+                if diag["api_lookup_attempted"]:
+                    diag["api_lookup_result"] = "failure"
+                    diag["api_lookup_exception_class"] = "ValueError"
+                    diag["api_lookup_reason"] = _buydiag_sanitize(e)
+                logger.warning("Apple IAP validation refused for user=%s pkg=%s: %s",
+                               current_user.get("id"), pkg["id"], e)
+                raise HTTPException(
+                    status_code=402,
+                    detail=(
+                        "Apple could not verify this purchase. Please ensure "
+                        "you completed the App Store payment sheet and try "
+                        "again, or contact support if the issue persists."
+                    ),
+                )
+            except Exception as e_inner:
+                # Genuine unexpected backend failure — still refuse the
+                # purchase (Section 6: fail closed), but flag it as 503
+                # so we don't accidentally satisfy the rejection-resistant
+                # "no 500 errors" Apple rule.
+                if diag["api_lookup_attempted"]:
+                    diag["api_lookup_result"] = "failure"
+                    diag["api_lookup_exception_class"] = type(e_inner).__name__
+                    diag["api_lookup_reason"] = _buydiag_sanitize(e_inner)
+                logger.exception("Apple IAP verifier crashed unexpectedly")
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "Purchase verification is temporarily unavailable. "
+                        "Please try again in a moment."
+                    ),
+                )
+
+        # ── BUYDIAG: capture verifier outcome metadata (safe fields only) ──
+        if isinstance(apple_info, dict):
+            diag["apple_environment_returned"] = apple_info.get("environment")
+            diag["apple_product_id_returned"] = (
+                apple_info.get("productId") or apple_info.get("product_id")
+            )
+            diag["apple_bundle_id_returned"] = (
+                apple_info.get("bundleId") or apple_info.get("bundle_id")
+            )
+            diag["apple_mocked"] = bool(apple_info.get("_mocked"))
+
+        # ------------------------------------------------------------------
+        # Entitlement products (no machine — just flip a user flag, e.g. ad_free)
+        # ------------------------------------------------------------------
+        entitlement = pkg.get("entitlement")
+        if entitlement == "ad_free":
+            already = bool(current_user.get("ad_free"))
+            if already:
+                raise HTTPException(status_code=400, detail="You already own the Ad-Free upgrade.")
+            diag["entitlement_grant_attempted"] = True
+            await db.users.update_one(
+                {"id": current_user["id"]},
+                {"$set": {"ad_free": True, "ad_free_purchased_at": now.isoformat()}},
+            )
+            diag["entitlement_grant_success"] = True
+            diag["transaction_write_attempted"] = True
+            await db.transactions.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "user_id": current_user["id"],
+                    "type": "purchase",
+                    "amount_usd": pkg["price_usd"],
+                    "amount_btc": 0.0,
+                    "status": "completed",
+                    "description": f"Purchased {pkg['name']}",
+                    "package_id": pkg["id"],
+                    "entitlement": "ad_free",
+                    "apple_transaction_id": payload.apple_transaction_id,
+                    "apple_environment": apple_info.get("environment"),
+                    "apple_mocked": bool(apple_info.get("_mocked")),
+                    "created_at": now.isoformat(),
+                }
+            )
+            diag["transaction_write_success"] = True
+            diag["final_http_status"] = 200
+            diag["final_response_category"] = "ok_ad_free"
+            return {
+                "success": True,
+                "machines_added": 0,
+                "entitlement_granted": "ad_free",
+                "package": pkg,
+                "apple": {
+                    "verified": not apple_info.get("_mocked", True),
+                    "environment": apple_info.get("environment"),
+                },
+            }
+
+        def _make_machine(suffix: str = "", bonus_ghs: float = 0.0) -> Dict[str, Any]:
+            boost_ghs = pkg.get("hashrate_boost_ghs", 0) + bonus_ghs
+            duration_h = pkg.get("duration_hours", 0)
+            # v1.0.2 / Build #25: IAP boost packs are PERMANENT (one-time
+            # CONSUMABLE per Apple 3.1.2(b)). duration_h=0 means no expiry —
+            # the hashpower credit is permanently added to the user. Legacy
+            # packs with duration_h>0 continue to use a time-bounded boost.
+            expires_iso = (
+                (now + timedelta(hours=duration_h)).isoformat()
+                if duration_h and duration_h > 0
+                else None
+            )
+            return {
+                "id": str(uuid.uuid4()),
+                "user_id": current_user["id"],
+                "package_id": pkg["id"],
+                "name": pkg["name"] + suffix,
+                "hashrate_boost_ghs": boost_ghs,
+                "hash_rate": boost_ghs,  # backward-compat
+                "duration_hours": duration_h,
+                "purchased_at": now.isoformat(),
+                "expires_at": expires_iso,
+                "status": "active",
+            }
+
+        # ------------------------------------------------------------------
+        # One-time first-purchase bonus (15→50% linear ladder).
+        # Applied ONLY on the first time this user buys this SKU. The user's
+        # `purchased_sku_bonuses` array tracks consumed bonuses.
+        # ------------------------------------------------------------------
+        user_doc = await db.users.find_one({"id": current_user["id"]}, {"_id": 0}) or {}
+        consumed_bonuses = list(user_doc.get("purchased_sku_bonuses") or [])
+        bonus_pct = float(pkg.get("first_purchase_bonus_pct") or 0)
+        apply_bonus = bonus_pct > 0 and (pkg["id"] not in consumed_bonuses)
+        bonus_ghs = (pkg.get("hashrate_boost_ghs", 0) * bonus_pct / 100.0) if apply_bonus else 0.0
+
+        machines_added = [_make_machine(bonus_ghs=bonus_ghs)]
+
+        diag["entitlement_grant_attempted"] = True
+        await db.machines.insert_many(machines_added)
+        diag["entitlement_grant_success"] = True
+
+        if apply_bonus:
+            await db.users.update_one(
+                {"id": current_user["id"]},
+                {"$addToSet": {"purchased_sku_bonuses": pkg["id"]}},
+            )
+
+        diag["transaction_write_attempted"] = True
         await db.transactions.insert_one(
             {
                 "id": str(uuid.uuid4()),
@@ -1041,19 +1307,29 @@ async def buy_package(
                 "amount_usd": pkg["price_usd"],
                 "amount_btc": 0.0,
                 "status": "completed",
-                "description": f"Purchased {pkg['name']}",
+                "description": (
+                    f"Purchased {pkg['name']}"
+                    + (f" + first-time bonus +{bonus_pct:.0f}% (+{bonus_ghs:.1f} GH/s)" if apply_bonus else "")
+                ),
                 "package_id": pkg["id"],
-                "entitlement": "ad_free",
+                "bonus_pct_applied": bonus_pct if apply_bonus else 0.0,
+                "bonus_ghs_applied": bonus_ghs,
                 "apple_transaction_id": payload.apple_transaction_id,
                 "apple_environment": apple_info.get("environment"),
                 "apple_mocked": bool(apple_info.get("_mocked")),
                 "created_at": now.isoformat(),
             }
         )
+        diag["transaction_write_success"] = True
+        diag["final_http_status"] = 200
+        diag["final_response_category"] = "ok"
+
         return {
             "success": True,
-            "machines_added": 0,
-            "entitlement_granted": "ad_free",
+            "machines_added": len(machines_added),
+            "first_purchase_bonus_applied": apply_bonus,
+            "bonus_pct": bonus_pct if apply_bonus else 0.0,
+            "bonus_ghs": round(bonus_ghs, 2),
             "package": pkg,
             "apple": {
                 "verified": not apple_info.get("_mocked", True),
@@ -1061,86 +1337,18 @@ async def buy_package(
             },
         }
 
-    def _make_machine(suffix: str = "", bonus_ghs: float = 0.0) -> Dict[str, Any]:
-        boost_ghs = pkg.get("hashrate_boost_ghs", 0) + bonus_ghs
-        duration_h = pkg.get("duration_hours", 0)
-        # v1.0.2 / Build #25: IAP boost packs are PERMANENT (one-time
-        # CONSUMABLE per Apple 3.1.2(b)). duration_h=0 means no expiry —
-        # the hashpower credit is permanently added to the user. Legacy
-        # packs with duration_h>0 continue to use a time-bounded boost.
-        expires_iso = (
-            (now + timedelta(hours=duration_h)).isoformat()
-            if duration_h and duration_h > 0
-            else None
+    except HTTPException as he:
+        diag["final_http_status"] = he.status_code
+        diag["final_response_category"] = _buydiag_sanitize(he.detail)
+        raise
+    except Exception as e:
+        diag["final_http_status"] = 500
+        diag["final_response_category"] = (
+            f"unhandled:{type(e).__name__}:{_buydiag_sanitize(e)}"
         )
-        return {
-            "id": str(uuid.uuid4()),
-            "user_id": current_user["id"],
-            "package_id": pkg["id"],
-            "name": pkg["name"] + suffix,
-            "hashrate_boost_ghs": boost_ghs,
-            "hash_rate": boost_ghs,  # backward-compat
-            "duration_hours": duration_h,
-            "purchased_at": now.isoformat(),
-            "expires_at": expires_iso,
-            "status": "active",
-        }
-
-    # ------------------------------------------------------------------
-    # One-time first-purchase bonus (15→50% linear ladder).
-    # Applied ONLY on the first time this user buys this SKU. The user's
-    # `purchased_sku_bonuses` array tracks consumed bonuses.
-    # ------------------------------------------------------------------
-    user_doc = await db.users.find_one({"id": current_user["id"]}, {"_id": 0}) or {}
-    consumed_bonuses = list(user_doc.get("purchased_sku_bonuses") or [])
-    bonus_pct = float(pkg.get("first_purchase_bonus_pct") or 0)
-    apply_bonus = bonus_pct > 0 and (pkg["id"] not in consumed_bonuses)
-    bonus_ghs = (pkg.get("hashrate_boost_ghs", 0) * bonus_pct / 100.0) if apply_bonus else 0.0
-
-    machines_added = [_make_machine(bonus_ghs=bonus_ghs)]
-
-    await db.machines.insert_many(machines_added)
-
-    if apply_bonus:
-        await db.users.update_one(
-            {"id": current_user["id"]},
-            {"$addToSet": {"purchased_sku_bonuses": pkg["id"]}},
-        )
-
-    await db.transactions.insert_one(
-        {
-            "id": str(uuid.uuid4()),
-            "user_id": current_user["id"],
-            "type": "purchase",
-            "amount_usd": pkg["price_usd"],
-            "amount_btc": 0.0,
-            "status": "completed",
-            "description": (
-                f"Purchased {pkg['name']}"
-                + (f" + first-time bonus +{bonus_pct:.0f}% (+{bonus_ghs:.1f} GH/s)" if apply_bonus else "")
-            ),
-            "package_id": pkg["id"],
-            "bonus_pct_applied": bonus_pct if apply_bonus else 0.0,
-            "bonus_ghs_applied": bonus_ghs,
-            "apple_transaction_id": payload.apple_transaction_id,
-            "apple_environment": apple_info.get("environment"),
-            "apple_mocked": bool(apple_info.get("_mocked")),
-            "created_at": now.isoformat(),
-        }
-    )
-
-    return {
-        "success": True,
-        "machines_added": len(machines_added),
-        "first_purchase_bonus_applied": apply_bonus,
-        "bonus_pct": bonus_pct if apply_bonus else 0.0,
-        "bonus_ghs": round(bonus_ghs, 2),
-        "package": pkg,
-        "apple": {
-            "verified": not apple_info.get("_mocked", True),
-            "environment": apple_info.get("environment"),
-        },
-    }
+        raise
+    finally:
+        _buydiag_emit(diag)
 
 
 # ---------------------------- Routes: Restore Purchases ----------------------------
@@ -2345,6 +2553,7 @@ async def admin_iap_selfcheck(
     return {
         "enabled": cfg.enabled,
         "require_real": require_real,
+        "backend_diag_build_tag": BACKEND_DIAG_BUILD_TAG,  # BUYDIAG deploy-verify marker
         "key_source": cfg.key_source,           # "env:APPLE_PRIVATE_KEY_PEM" or "file:..."
         "private_key": {
             "path": p8_path or "(unset)",
