@@ -51,17 +51,26 @@ const IS_IOS = Platform.OS === 'ios';
 const TEST_REWARDED_IOS = 'ca-app-pub-3940256099942544/1712485313';
 const TEST_INTERSTITIAL_IOS = 'ca-app-pub-3940256099942544/4411468910';
 
-// Production iOS rewarded unit. Overridden by EXPO_PUBLIC_ADMOB_REWARDED_IOS
-// in `eas.json` per build profile. During Apple App Review and pre-launch
-// testing we deliberately ship Google's test ad unit IDs (per Google's
-// official pre-launch guidance) so the SDK is guaranteed to fill on any
-// device, bypassing the documented 24-72h AdMob warm-up window for brand-
-// new apps. After Apple approval, the env var is swapped back to the prod
-// unit ID (ca-app-pub-6035003811280283/1502046287) and a fresh build ships.
-const PROD_REWARDED_IOS =
-  process.env.EXPO_PUBLIC_ADMOB_REWARDED_IOS || TEST_REWARDED_IOS;
-const PROD_INTERSTITIAL_IOS =
-  process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_IOS || TEST_INTERSTITIAL_IOS;
+// Production iOS unit IDs. Overridden by env vars baked in via the EAS
+// profile (eas.json `env` block).
+//
+// Sentinel: setting the env var to an EXPLICIT empty string ("") means
+// "this ad format is intentionally disabled for this build" — used by the
+// `appstore-review` profile when a production unit ID for that format
+// hasn't been provisioned yet. The Apple App Store forbids submitting
+// builds that serve Google's public test ad unit IDs, so we disable the
+// format entirely rather than fall back to test IDs in production.
+//
+// Distinguishes 3 states:
+//   - undefined  → env var unset → fall back to TEST unit (dev workflow)
+//   - ""         → env var explicitly empty → DISABLED (review-safe)
+//   - non-empty  → real production unit ID
+const _rewardedEnvRaw = process.env.EXPO_PUBLIC_ADMOB_REWARDED_IOS;
+const _interstitialEnvRaw = process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_IOS;
+const REWARDED_DISABLED = _rewardedEnvRaw === '';
+const INTERSTITIAL_DISABLED = _interstitialEnvRaw === '';
+const PROD_REWARDED_IOS = _rewardedEnvRaw || TEST_REWARDED_IOS;
+const PROD_INTERSTITIAL_IOS = _interstitialEnvRaw || TEST_INTERSTITIAL_IOS;
 
 // Max ms the SDK is given to load an ad before we surface a user-visible
 // error instead of leaving the Watch button stuck on "Loading…".
@@ -178,18 +187,35 @@ export async function initAds(): Promise<void> {
   //    first ad in each. Each manager's `start()` is wrapped because the
   //    underlying RewardedAd.createForAdRequest call can throw on first
   //    invocation if the native module is mis-linked.
-  try {
-    _rewarded = new RewardedManager(rewardedUnitId(), !_attGranted);
-    _rewarded.start();
-  } catch (e) {
-    console.warn('[ads] RewardedManager start failed (non-fatal):', e);
+  //
+  //    The `*_DISABLED` flags are set when the build profile (eas.json)
+  //    deliberately passes EXPO_PUBLIC_ADMOB_*_IOS="" — meaning "no prod
+  //    unit ID is provisioned for this format yet; do NOT serve Google
+  //    test ads in a production submission" (Apple review requirement).
+  if (!REWARDED_DISABLED) {
+    try {
+      _rewarded = new RewardedManager(rewardedUnitId(), !_attGranted);
+      _rewarded.start();
+    } catch (e) {
+      console.warn('[ads] RewardedManager start failed (non-fatal):', e);
+      _rewarded = null;
+    }
+  } else {
+    // eslint-disable-next-line no-console
+    console.log('[ads] Rewarded ad format disabled by build profile.');
     _rewarded = null;
   }
-  try {
-    _interstitial = new InterstitialManager(interstitialUnitId(), !_attGranted);
-    _interstitial.start();
-  } catch (e) {
-    console.warn('[ads] InterstitialManager start failed (non-fatal):', e);
+  if (!INTERSTITIAL_DISABLED) {
+    try {
+      _interstitial = new InterstitialManager(interstitialUnitId(), !_attGranted);
+      _interstitial.start();
+    } catch (e) {
+      console.warn('[ads] InterstitialManager start failed (non-fatal):', e);
+      _interstitial = null;
+    }
+  } else {
+    // eslint-disable-next-line no-console
+    console.log('[ads] Interstitial ad format disabled by build profile.');
     _interstitial = null;
   }
 }
