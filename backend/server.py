@@ -15,6 +15,7 @@ import secrets
 import string
 import json
 import hashlib
+import re
 
 import bcrypt
 import jwt as pyjwt
@@ -856,6 +857,49 @@ async def delete_account(current_user: Dict[str, Any] = Depends(get_current_user
     }
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Legacy "Rig" → "Booster" display normalization
+#
+# App Store Review required removing every user-facing "Rig" wording
+# (the package catalog was renamed "X Rig" → "X Booster" in this
+# session). Machine documents created BEFORE the catalog rename have
+# the legacy "X Rig" string baked into `name`. We normalize on read so
+# the iOS app never sees "Rig" without forcing a DB write at request
+# time, AND we also do a one-time idempotent startup migration that
+# updates the underlying documents so any other consumer (admin views,
+# downstream queries) sees the cleaned data too.
+#
+# Strategy: conservative word-boundary substitution. ONLY the literal
+# capitalized token "Rig" is replaced. "Daily Booster", "Newcomer
+# Boost", already-correct "X Booster", and any non-Rig name are passed
+# through untouched. The substitution preserves the rest of the name
+# (e.g. an eventual "Pro Rig (Trial)" becomes "Pro Booster (Trial)").
+# ─────────────────────────────────────────────────────────────────────
+_LEGACY_RIG_RE = re.compile(r"\bRig\b")
+
+
+def _scrub_rig(name: Any) -> Any:
+    """Word-boundary 'Rig' → 'Booster'. Non-string values pass through."""
+    if not isinstance(name, str):
+        return name
+    return _LEGACY_RIG_RE.sub("Booster", name)
+
+
+def _normalize_machine(machine: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a SHALLOW COPY of `machine` with `name` scrubbed of the
+    legacy 'Rig' wording. Does NOT mutate the input. Does NOT touch the
+    database. Safe for use on any read-path that returns machine docs
+    to the iOS app."""
+    if not isinstance(machine, dict):
+        return machine
+    name = machine.get("name")
+    if isinstance(name, str) and "Rig" in name:
+        out = dict(machine)
+        out["name"] = _scrub_rig(name)
+        return out
+    return machine
+
+
 # ---------------------------- Routes: Dashboard ----------------------------
 @api.get("/dashboard")
 async def dashboard(current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -870,6 +914,10 @@ async def dashboard(current_user: Dict[str, Any] = Depends(get_current_user)):
 
     # Daily projected
     daily_projected_usd = sum(float(m.get("daily_yield_usd", 0.0)) for m in active_machines)
+
+    # Display normalization: strip legacy "Rig" wording from machine names
+    # before returning them to the iOS app. Read-only — no DB writes.
+    active_machines = [_normalize_machine(m) for m in active_machines]
 
     return {
         "user": serialize_user_public(user),
@@ -890,6 +938,9 @@ async def list_machines(current_user: Dict[str, Any] = Depends(get_current_user)
     machines = await db.machines.find(
         {"user_id": current_user["id"]}, {"_id": 0}
     ).sort("purchased_at", -1).to_list(200)
+    # Display normalization: strip legacy "Rig" wording from machine names
+    # before returning them to the iOS app. Read-only — no DB writes.
+    machines = [_normalize_machine(m) for m in machines]
     return {"machines": machines}
 
 
@@ -4330,6 +4381,36 @@ async def startup():
         await db.purchase_diagnostics.create_index("purchase_trace_id")
     except Exception as e:
         logger.warning("Index creation issue: %s", e)
+
+    # ─── One-time idempotent migration: legacy "Rig" → "Booster" ──────────
+    # App Store Review required removing every user-facing "Rig" wording.
+    # Machine documents created BEFORE the catalog rename had "X Rig" baked
+    # into `name`. The read-time normalization in /api/dashboard and
+    # /api/machines already prevents the iOS app from seeing "Rig", but we
+    # also clean up the underlying documents so admin views, telemetry,
+    # and any future consumer see the canonical "X Booster" name.
+    # This migration is FULLY IDEMPOTENT — if all names are already clean,
+    # it is a no-op. Reads only `machines.name` and rewrites only the same
+    # field; preserves all entitlements, GH/s, status, expiry, package_id,
+    # transactions and purchase records.
+    try:
+        cursor = db.machines.find({"name": {"$regex": r"\bRig\b"}})
+        migrated = 0
+        async for _m in cursor:
+            new_name = _scrub_rig(_m.get("name", ""))
+            if new_name != _m.get("name"):
+                await db.machines.update_one(
+                    {"_id": _m["_id"]},
+                    {"$set": {"name": new_name}},
+                )
+                migrated += 1
+        if migrated:
+            logger.info(
+                "Migrated %d machine.name field(s): 'Rig' → 'Booster'",
+                migrated,
+            )
+    except Exception as e:
+        logger.warning("Machine name 'Rig'→'Booster' migration issue: %s", e)
 
     # ----------------------------------------------------------------
     # ONE-TIME DATA WIPE MIGRATION (Build #22 AdMob pivot)
