@@ -34,7 +34,7 @@ export default function CrossSellBanner({
 }) {
   const router = useRouter();
   if (!data?.available || !data.package) return null;
-  const headline = data.headline || '+100%!! More Computing Power';
+  const headline = data.headline || 'View Booster Options';
   const priceLbl = data.price_label || `$${data.package.price_usd.toFixed(2)}!`;
   const origLbl = data.original_price_label || `$${data.package.original_price_usd.toFixed(2)}`;
 

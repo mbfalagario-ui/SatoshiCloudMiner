@@ -3852,7 +3852,7 @@ async def store_cross_sell(current_user: Dict[str, Any] = Depends(get_current_us
         "available": True,
         "user_hashrate_ghs": round(H, 2),
         "package": _enrich_package(pick),
-        "headline": "+100%!! More Computing Power",
+        "headline": "View Booster Options",
         "price_label": f"${pick['price_usd']:.2f}!",
         "original_price_label": f"${pick['original_price_usd']:.2f}",
         "discount_pct": CROSS_SELL_DISCOUNT_PCT,
@@ -3937,7 +3937,7 @@ SEEDED_FAQS: List[Dict[str, Any]] = [
      "a": "To keep the Lightning Network healthy and prevent abuse, each user can submit one redeem request per 24 hours. The cooldown starts the moment your redeem is broadcast."},
     {"id": "faq_iap_bonus", "q": "What is the one-time hashrate boost bonus?",
      "a": "Every Booster pack grants a one-time free hashrate bonus on your FIRST purchase of that pack: starting at +15% on the entry tier and going up to +50% on the flagship Colossus Booster. The bonus stacks with the pack's base hashrate."},
-    {"id": "faq_cross_sell", "q": "What is the +100% More Computing Power banner?",
+    {"id": "faq_cross_sell", "q": "What is the View Booster Options banner?",
      "a": "It's a dynamic offer that mirrors your current hashrate at a 25% discount. Tap it to double your active hashrate. Each time you purchase the banner offer, the next-tier-up SKU appears at the same 25% discount."},
     {"id": "faq_safety", "q": "Is my account safe?",
      "a": "Yes. We don't hold your private keys, your seed phrase, or any on-chain assets. You provide your own Lightning wallet address at redeem time, so funds always flow directly to a wallet you control."},
@@ -4465,12 +4465,24 @@ async def startup():
     # startup so the drift can't silently happen again.
     await _ensure_reviewer_accounts()
 
-    # Seed FAQs
+    # Seed FAQs.
+    # NOTE: `q` and `a` (the visible question + answer text) are RE-SYNCED on
+    # every startup via $set so the source code in SEEDED_FAQS is the single
+    # source of truth for App-Review-visible copy. This is critical because
+    # an earlier App Review iteration left "Colossus Rig" copy stuck in the
+    # DB even after the source was updated to "Colossus Booster" — App Store
+    # reviewers would still see "Rig" in the in-app FAQ. Admin preferences
+    # (`order`, `enabled`) are preserved across restarts via $setOnInsert.
     try:
         for i, faq in enumerate(SEEDED_FAQS):
             await db.faqs.update_one(
                 {"id": faq["id"]},
-                {"$setOnInsert": {**faq, "order": i, "enabled": True}},
+                {
+                    "$set": {"q": faq["q"], "a": faq["a"]},
+                    "$setOnInsert": {
+                        "id": faq["id"], "order": i, "enabled": True,
+                    },
+                },
                 upsert=True,
             )
     except Exception:
