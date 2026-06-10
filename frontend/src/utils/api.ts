@@ -1,4 +1,5 @@
 import { storage } from '@/src/utils/storage';
+import { Platform } from 'react-native';
 
 // EXPO_PUBLIC_BACKEND_URL MUST be baked into every build (it is set in
 // frontend/.env for dev/preview and in every eas.json profile for native
@@ -7,7 +8,6 @@ import { storage } from '@/src/utils/storage';
 // breaks non-production deployments. Fail fast and loud instead.
 const BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || '').replace(/\/$/, '');
 if (!BASE) {
-  // eslint-disable-next-line no-console
   console.error(
     '[api] EXPO_PUBLIC_BACKEND_URL is not set — all API calls will fail. ' +
       'Set it in frontend/.env (dev) or the eas.json build profile (native).'
@@ -26,8 +26,6 @@ export async function getToken(): Promise<string | null> {
 export async function clearToken() {
   await storage.secureRemove(TOKEN_KEY);
 }
-
-import { Platform } from 'react-native';
 
 export class ApiError extends Error {
   status: number;

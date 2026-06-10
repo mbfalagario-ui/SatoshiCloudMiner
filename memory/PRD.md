@@ -12,6 +12,19 @@
 > - **History**: Builds 23–37 each rejected by Apple for various 2.1/3.1/5.1 issues; Build 37
 >   rejected for unresponsive cross-sell banner on iPad → banner fully removed for Build 38.
 >
+> ### Changelog — 2026-06-10 (Emergent deployment readiness fixes)
+> - Deployment agent scan: initial FAIL (3 blockers) → all fixed → re-scan **PASS/READY**.
+> - Removed error-spamming legacy `auto_ship_tick` scheduler job (ASC 401 every 30 min in
+>   deploy logs): deleted `backend/services/auto_ship.py`, removed import/registration from
+>   `server.py`, removed `auto_ship` param from `services/scheduler.py`, purged `AUTO_SHIP_*`
+>   env vars. Backend boots clean with 5 jobs; 30/30 regression pytest still green.
+> - `frontend/src/utils/api.ts`: removed hardcoded prod fallback URL — BASE now env-only
+>   (`EXPO_PUBLIC_BACKEND_URL`, set in frontend/.env + every eas.json profile) with fail-fast
+>   console.error. E2E login + Home dashboard verified on preview after the change.
+> - Unblocked `.env` for Emergent deployments: removed `.env` patterns from root `.gitignore`
+>   and `backend/.dockerignore` (Fly unaffected: fly secrets override .env, load_dotenv has no
+>   override). NOTE: backend/.env (runtime secrets) is now committable — rotate if repo goes public.
+>
 > ### Changelog — 2026-06-10 (zero-build forensic verification pass, this session)
 > - Verified all 10 phases of the user's forensic checklist: secret audit, banner removal,
 >   Profile FAQ dedup, page-load fix, prod FAQ purge (17 clean FAQs, no `faq_cross_sell`,
