@@ -9,7 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/utils/api';
 import { useSession } from '@/src/ctx';
-import { colors, spacing, radius, fonts, media, shadows, fmtUsd, fmtBtc, fmtSats } from '@/src/utils/theme';
+import { colors, spacing, radius, fonts, media, shadows, fmtUsd } from '@/src/utils/theme';
 import TickingBtc from '@/src/components/TickingBtc';
 
 type EarningsPayload = {
@@ -25,7 +25,7 @@ type EarningsPayload = {
 };
 
 export default function Earnings() {
-  const { user, refresh } = useSession();
+  const { refresh } = useSession();
   const router = useRouter();
   const [earnings, setEarnings] = useState<EarningsPayload | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -58,7 +58,6 @@ export default function Earnings() {
 
   const balanceBtc = earnings.indicative_balance_btc || 0;
   const balanceUsd = (earnings.btc_usd || 0) * balanceBtc;
-  const balanceSats = Math.floor(balanceBtc * 100_000_000);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>

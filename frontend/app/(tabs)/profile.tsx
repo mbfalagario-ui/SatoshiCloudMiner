@@ -3,12 +3,10 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 're
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radius, fonts, fmtUsd, fmtBtc } from '@/src/utils/theme';
+import { colors, spacing, radius, fonts, fmtUsd } from '@/src/utils/theme';
 import { useSession } from '@/src/ctx';
 import { confirmDialog, notify } from '@/src/utils/dialog';
 import { api } from '@/src/utils/api';
-
-type FAQ = { id: string; q: string; a: string };
 
 export default function Profile() {
   const router = useRouter();
@@ -16,8 +14,6 @@ export default function Profile() {
   const [autoCheckin, setAutoCheckin] = useState(true);
   const [autoReinvest, setAutoReinvest] = useState(false);
   const [supportUnread, setSupportUnread] = useState(0);
-  const [faqs, setFaqs] = useState<FAQ[]>([]);
-  const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -45,15 +41,11 @@ export default function Profile() {
     return () => { mounted = false; clearInterval(t); };
   }, []);
 
-  // FAQ list — public endpoint, no auth header.
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await api('/faqs', { auth: false });
-        setFaqs(r.faqs || []);
-      } catch {}
-    })();
-  }, []);
+  // Build 38 — Apple Guideline 2.1(a) remediation:
+  // The inline FAQ fetch + render block was removed (it duplicated the
+  // dedicated /faq screen, blocked Profile page-load on /api/faqs, and
+  // obscured taps for App Reviewers). Users still reach FAQs via the
+  // "Help & FAQs" row in the menu list above (→ /faq).
 
   const toggle = async (k: 'auto_checkin' | 'auto_reinvest', v: boolean) => {
     if (k === 'auto_checkin') setAutoCheckin(v); else setAutoReinvest(v);
@@ -401,49 +393,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     paddingHorizontal: spacing.md,
   },
-  contactSupportBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    marginTop: spacing.sm,
-  },
-  contactSupportText: { flex: 1, color: colors.primary, fontWeight: '800', fontSize: 13 },
-  appVersion: { color: colors.textTertiary, fontSize: 11, textAlign: 'center', marginTop: spacing.lg },
-  disclaimer: {
-    color: colors.textTertiary,
-    fontSize: 11,
-    lineHeight: 16,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-  },
-});
-ign: 'center',
-    marginTop: 6,
-    paddingHorizontal: spacing.md,
-  },
-  faqWrap: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    overflow: 'hidden',
-  },
-  faqEmpty: { color: colors.textTertiary, fontSize: 12, padding: spacing.md, textAlign: 'center' },
-  faqRow: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSoft,
-  },
-  faqHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  faqQ: { flex: 1, color: colors.text, fontSize: 13, fontWeight: '700', lineHeight: 18 },
-  faqA: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 8, marginLeft: 28 },
   contactSupportBtn: {
     flexDirection: 'row',
     alignItems: 'center',

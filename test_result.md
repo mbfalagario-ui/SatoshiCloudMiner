@@ -981,17 +981,65 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Build #22 — AdMob/Virtual Hashrate Pivot (Frontend)"
-    - "Home tab — Cross-sell + Indicative Earnings + Daily Check-In card + Watch Ad card + Hashrate Breakdown"
-    - "Daily Check-In screen — 7-day ladder grid"
-    - "Store tab — Cross-sell banner + Active Power + plan pills + bonus card + Pay button with strike-through"
-    - "Earnings tab — Indicative Earnings + Redeem CTA + Redeem Records + non-custodial disclaimer"
-    - "Redeem flow — Network select → Form (wallet picker, amount, invoice, fee preview) → Confirm modal"
-    - "Support — FAQ tiles + AI chat + premium thread routing"
-    - "Admin Strategist — AI Agents grid + Profitability Knobs editor"
+    - "Build #38 — Cross-sell banner removed across all tabs"
+    - "Build #38 — Profile FAQ duplicate section removed"
+    - "Build #38 — Backend faq_cross_sell purged from prod /api/faqs"
+    - "Build #38 — Page-load delay resolved (wallet no longer awaits /store/cross-sell)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+build_38:
+  - task: "Build #38 — Cross-sell banner removal + Profile FAQ duplicate fix"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/{index,wallet,shop,profile}.tsx + backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Apple G2.1(a) targeted regression repair for Build 38. Diff vs HEAD:
+            • frontend/app/(tabs)/index.tsx — removed CrossSellBanner import +
+              `<CrossSellBanner data={crossSell} />` render (it referenced an
+              undefined `crossSell` variable and an import from a deleted
+              component path; this was the source of the prior Build 38
+              page-load failures).
+            • frontend/app/(tabs)/wallet.tsx — removed CrossSellBanner import,
+              dropped the `crossSell` state, replaced `Promise.allSettled([
+              /earnings, /store/cross-sell ])` with a single `/earnings` call.
+              No banner rendered.
+            • frontend/app/(tabs)/shop.tsx — already clean (no banner refs).
+            • frontend/app/(tabs)/profile.tsx — removed the inline FAQ fetch
+              + render block between "Open Operator Console" and "Still need
+              help? Chat with support". The dedicated /faq screen is still
+              reachable via the "Help & FAQs" row in the menu.
+            • backend/server.py — removed `faq_cross_sell` entry from
+              SEEDED_FAQS. Added a startup `db.faqs.delete_many({"id":
+              {"$nin": seeded_ids}})` so stale docs (including the legacy
+              "View Booster Options" FAQ) are hard-pruned on every boot.
+              Deployed to Fly: live /api/faqs now returns 17 entries with
+              zero "View Booster Options" / "+100%" / "Rig" text.
+            • app.json — version 1.0.3 unchanged, buildNumber stays "38"
+              (previous Build 38 was queued via EAS but never uploaded to
+              ASC; the build number is reusable per user instruction).
+              supportsTablet remains false.
+          IAP / StoreKit / JWS verification untouched. Apple keys, Fly
+          secrets, ASC keys all untouched. AdMob iosAppId and rewarded ad
+          unit untouched. No automatic interstitial/app-open ads
+          implemented (deferred — production AdMob unit IDs absent).
+          Reviewer accounts (appreview1/2/3@hashratecloudminer.app) all
+          confirmed is_admin=false on prod — they do NOT see the
+          "Open Operator Console" CTA.
+          Smoke test: GET /api/{faqs,packages,machines,dashboard,earnings,
+          transactions,withdraw/methods,daily-checkin/status,ads/status,
+          auto/settings,support/thread,support/unread,system/btc_rate} all
+          200. /api/faqs purity verified (no "View Booster Options", no
+          "+100%", no Rig).
+          NEEDS: backend deep regression via testing_agent before queueing
+          EAS Build 38.
 
 frontend_build22:
   - task: "Build #22 — Frontend AdMob / Virtual Hashrate UX"

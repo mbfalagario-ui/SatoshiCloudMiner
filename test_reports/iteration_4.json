@@ -1,0 +1,41 @@
+{
+  "summary": "Build 38 backend regression smoke (PROD https://api.hashratecloudminer.com) — VERDICT: PASS. 30/30 pytest cases green covering all 10 App-Review-critical checks from the review request: FAQ purity (count=17, no faq_cross_sell id, zero 'View Booster Options'/'+100%'/'Colossus Rig'/'Pro Rig'/'Ultra Rig' and no \\bRig\\b match in any q/a); machine/dashboard/transactions purity for reviewer1 (no \\bRig\\b); 16 critical health endpoints (4 unauthed + 12 authed) all returned HTTP 200; packages catalog has exactly 10 entries including adfree_399 and excluding starter_099 with all 9 mining packages carrying hashrate_boost_ghs, price_usd, original_price_usd, first_purchase_bonus_pct, hashrate_display; withdraw bounds for reviewer1 match (min_sats=25000, max_sats=50000, fee_flat_sats=150, cooldown_hours=24, admin_unlimited=false) and POST /api/withdraw with amount_sats=100 correctly rejects with HTTP 400 'min'/'25000'; daily-checkin second call same day returns 400 with 'Check in again at' message; all three reviewer accounts (appreview1/2/3@hashratecloudminer.app) confirmed is_admin=false on /api/auth/me; /api/store/cross-sell still returns a valid non-500 status (no regression). No deprecated Expo packages or React Native issues to report from this backend-only run. Frontend Playwright testing intentionally skipped per review request — Expo web preview is bundler-blocked by react-native-google-mobile-ads, unrelated to Build 38.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_build38_regression.py",
+    "/app/test_reports/pytest/build38_results.xml"
+  ],
+  "action_items": [
+    "Backend is App-Review ready for Build 38 submission. No backend code changes required.",
+    "Reminder (from iteration_3, not re-verified here): ensure `APPLE_VERIFY_REQUIRED=1` is set on Fly production secrets and the Apple ASC key (J55DSC44V5) is rotated BEFORE submitting Build 38 IPA — otherwise the JWS fail-closed guarantee in /api/packages/buy remains inert. This is outside the scope of Build 38 changes but should be checked at submit time."
+  ],
+  "critical_code_review_comments": [
+    "PROD /api/faqs returns 17 entries — `faq_cross_sell` is fully purged. The startup `delete_many({\"id\": {\"$nin\": seeded_ids}})` hard-prune in server.py is working as designed on the live Fly deployment.",
+    "PROD /api/packages still returns 10 packages with the expected schema (9 mining + adfree_399). No starter_099 present. No 'Rig' wording found in any package name (verified indirectly via dashboard/transactions/machines purity sweeps).",
+    "All three reviewer accounts confirmed is_admin=false on prod via /api/auth/me — Profile UI will correctly hide the 'Open Operator Console' CTA.",
+    "GET /api/store/cross-sell returns a non-500 status — no regression introduced by Build 38 even though the frontend no longer calls it."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_build38_regression.py (new, 30 tests against prod https://api.hashratecloudminer.com)",
+    "/app/test_reports/pytest/build38_results.xml (generated)",
+    "/app/test_reports/iteration_4.json (this file)"
+  ],
+  "success_rate": {
+    "backend": "100% (30/30 passed)",
+    "frontend": "N/A — backend-only test pass per review request. Expo web preview is bundler-blocked (pre-existing react-native-google-mobile-ads web import constraint, unrelated to Build 38)."
+  },
+  "seed_data_creation": "None. Tests are read-only against PROD except: (1) POST /api/withdraw with amount=100 which is rejected 400 before any state change; (2) POST /api/daily-checkin which may grant once per reviewer1 per day — idempotent and consumed by the existing legacy guard, no cleanup needed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Build 38 backend regression suite lives at /app/backend/tests/test_build38_regression.py and runs against PROD (https://api.hashratecloudminer.com). 30 tests cover FAQ purity, Rig-string purity across machines/dashboard/transactions, 16 health endpoints, packages catalog, withdraw bounds, daily-checkin idempotency, reviewer is_admin=false, and cross-sell endpoint non-500. All endpoints return wrapped envelopes ({\"faqs\":[...]}, {\"machines\":[...]}, {\"packages\":[...]}) — the test helpers normalise this. Re-use this file for any future App-Review regression cycles. The /api/packages/buy and /api/iap/restore IAP flows are NOT exercised here — they are covered by /app/backend/tests/test_build33_apple_iap.py (which runs against local backend, not prod). Frontend Expo web preview still broken at metro bundler (react-native-google-mobile-ads web resolution) — out of scope for Build 38; iOS native build is verified via TestFlight after App Store submission.",
+  "rca_of_issue": "N/A — no regressions or defects observed. Build 38 corrective pass (faq_cross_sell purge + Profile FAQ duplicate removal) is fully consistent with the live PROD backend behaviour described in the review request."
+}
