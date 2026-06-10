@@ -1,7 +1,6 @@
-# Apple private keys never go into the image — use `fly secrets set` instead.
-# NOTE: .env IS included in the build context (required by Emergent
-# deployments). On Fly this is harmless: runtime secrets are injected via
-# `fly secrets` and load_dotenv() does not override existing env vars.
+# Never bake secrets into the image — use `fly secrets set` instead.
+.env
+.env.*
 keys/
 *.p8
 

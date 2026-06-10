@@ -12,6 +12,25 @@
 > - **History**: Builds 23–37 each rejected by Apple for various 2.1/3.1/5.1 issues; Build 37
 >   rejected for unresponsive cross-sell banner on iPad → banner fully removed for Build 38.
 >
+> ### Changelog — 2026-06-10 (containment & rollback audit — narrow Build 38 scope restored)
+> - REVERTED: `api.ts` (byte-exact restore of Build-37 fallback code from eb08e44),
+>   root `.gitignore` .env patterns restored, `backend/.dockerignore` .env patterns
+>   restored. `.env` files confirmed NEVER committed (git ls-files clean throughout).
+> - KEPT (justified): auto_ship removal (was the only ERROR in deploy logs; zero
+>   user-facing/IAP/scheduler impact, removes autonomous eas-submit risk),
+>   eas.json production-profile test-ad-unit fix (P4-allowed), profile.tsx version
+>   label (P4-allowed), web-only metro admob stub (QA infrastructure, iOS bundle
+>   unaffected), EXPO_TOKEN relocation to /root/.expo_token.
+> - ADDED: backend/.env.example (placeholders only), memory/credit_refund_request.md
+>   (credit escalation case file — no internal refund mechanism exists; channel is
+>   support@emergent.sh).
+> - P6 re-verification after containment: ALL GREEN — banner/Rig/FAQ greps clean,
+>   prod endpoints 0 banned strings, reviewer non-admin, tabs load ≤1.8s, 30/30
+>   pytest, tsc clean, app.json 1.0.3/38/iPhone-only, appstore-review profile
+>   untouched, zero IAP diff this session vs 4cd7b96.
+> - Emergent K8s deployment readiness work is DEFERRED (out of Build 38 scope).
+>   Apple key rotation DEFERRED (post-approval task; JWS-local purchase path proven).
+>
 > ### Changelog — 2026-06-10 (Emergent deployment readiness fixes)
 > - Deployment agent scan: initial FAIL (3 blockers) → all fixed → re-scan **PASS/READY**.
 > - Removed error-spamming legacy `auto_ship_tick` scheduler job (ASC 401 every 30 min in
