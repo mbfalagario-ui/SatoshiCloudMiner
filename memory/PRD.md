@@ -1,5 +1,45 @@
 # HashCloud — Product Requirements Document
 
+> ## ⚠️ CURRENT STATE — 2026-06-10 (supersedes any conflicting text below)
+> - **Product name**: Hashrate Cloud Miner · **Bundle ID**: `app.satoshicloudminer` · **ASC App ID**: 6773104756
+> - **Version**: 1.0.3, iOS buildNumber **38**, `supportsTablet=false` (iPhone-only)
+> - **Production backend**: https://api.hashratecloudminer.com (Fly.io `hashrate-cloud-miner-api`, MongoDB Atlas)
+> - **IAP**: REAL StoreKit 2 — `/api/packages/buy` verifies the client JWS locally
+>   (appstoreserverlibrary SignedDataVerifier + Apple Root CA, fail-closed with
+>   `APPLE_VERIFY_REQUIRED=1` on prod). NOT mocked. Real-device purchase verified 2026-06-09.
+> - **Ads**: AdMob rewarded only (prod unit ca-app-pub-6035003811280283/1502046287).
+>   Interstitial/app-open DISABLED — deferred until user provides prod unit IDs.
+> - **History**: Builds 23–37 each rejected by Apple for various 2.1/3.1/5.1 issues; Build 37
+>   rejected for unresponsive cross-sell banner on iPad → banner fully removed for Build 38.
+>
+> ### Changelog — 2026-06-10 (zero-build forensic verification pass, this session)
+> - Verified all 10 phases of the user's forensic checklist: secret audit, banner removal,
+>   Profile FAQ dedup, page-load fix, prod FAQ purge (17 clean FAQs, no `faq_cross_sell`,
+>   zero `Rig` strings on /faqs /dashboard /machines /transactions /packages), git diff scope,
+>   build config, static checks (tsc ✓, 30/30 build38 pytest ✓), UI QA 12/12 (iteration_5.json).
+> - Fixed during audit: (1) `eas.json` `production` + `production-prod-domain` profiles had
+>   Google PUBLIC TEST ad units + preview backend URL → now prod rewarded unit, interstitial
+>   disabled, prod URL. (2) Stale hardcoded "v1.0.1 (23)" label on Profile → dynamic via
+>   expo-constants. (3) `EXPO_TOKEN` moved out of `backend/.env` → `/root/.expo_token` (600).
+>   (4) Web preview bundler-block fixed via WEB-ONLY metro stub for
+>   react-native-google-mobile-ads (`metro.config.js` + `src/utils/admob.web-stub.js`) —
+>   iOS native builds unaffected; browser QA now possible.
+> - ⚠️ FLAGGED (pre-existing, user action): all Apple API keys (ASC + IAP .p8) return 401
+>   from Apple. Live JWS purchase path unaffected; affects only `eas submit` and the API
+>   fallback. Rotate keys in ASC before relying on either.
+> - ⚠️ The EAS Build 38 artifact from 2026-06-10 13:46 (commit 244f89a) predates the final
+>   banner-removal commits (5fdea7a, 4cd7b96) — it is STALE and must NOT be submitted.
+>   A fresh build from current HEAD is required; never submitted to ASC via EAS, so
+>   buildNumber stays 38.
+> - Latent hazard noted (P2, untouched): `backend/services/auto_ship.py` scheduled job is
+>   inert (fails at first ASC call with 401) but should be removed/disabled in a future
+>   cleanup to permanently rule out unintended `eas submit`.
+>
+> ### Backlog
+> - P1: Interstitial/app-open AdMob ads — BLOCKED on user-provided prod unit IDs. Do not implement before then.
+> - P2: Refactor `server.py` (~4700 lines) into routes/models modules; delete legacy `auto_ship.py` + stale tests (backend_test.py withdraw 400-vs-422, build33 env-dependent IAP gate tests).
+> - User action: trigger Emergent Publish / EAS build for corrected Build 38; rotate Apple API keys.
+
 ## Summary
 HashCloud is a cloud-computing performance monitoring and management mobile app
 inspired by the cloud-mining genre on the App Store (functional concept similar
