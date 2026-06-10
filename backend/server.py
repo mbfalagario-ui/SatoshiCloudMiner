@@ -3937,8 +3937,6 @@ SEEDED_FAQS: List[Dict[str, Any]] = [
      "a": "To keep the Lightning Network healthy and prevent abuse, each user can submit one redeem request per 24 hours. The cooldown starts the moment your redeem is broadcast."},
     {"id": "faq_iap_bonus", "q": "What is the one-time hashrate boost bonus?",
      "a": "Every Booster pack grants a one-time free hashrate bonus on your FIRST purchase of that pack: starting at +15% on the entry tier and going up to +50% on the flagship Colossus Booster. The bonus stacks with the pack's base hashrate."},
-    {"id": "faq_cross_sell", "q": "What is the View Booster Options banner?",
-     "a": "It's a dynamic offer that mirrors your current hashrate at a 25% discount. Tap it to double your active hashrate. Each time you purchase the banner offer, the next-tier-up SKU appears at the same 25% discount."},
     {"id": "faq_safety", "q": "Is my account safe?",
      "a": "Yes. We don't hold your private keys, your seed phrase, or any on-chain assets. You provide your own Lightning wallet address at redeem time, so funds always flow directly to a wallet you control."},
     {"id": "faq_login_issues", "q": "I can't sign in. What do I do?",
@@ -4474,6 +4472,18 @@ async def startup():
     # reviewers would still see "Rig" in the in-app FAQ. Admin preferences
     # (`order`, `enabled`) are preserved across restarts via $setOnInsert.
     try:
+        # Build 38 — Apple Guideline 2.1(a) remediation:
+        # Hard-prune FAQ documents whose ids are no longer in the seeded
+        # corpus. This permanently removes the legacy `faq_cross_sell`
+        # ("View Booster Options" banner explainer) that survived prior
+        # $set-only seeds and was still being returned by GET /api/faqs.
+        seeded_ids = {f["id"] for f in SEEDED_FAQS}
+        stale = await db.faqs.delete_many({"id": {"$nin": list(seeded_ids)}})
+        if stale.deleted_count:
+            logger.warning(
+                "FAQ seed: removed %d stale faq doc(s) not in SEEDED_FAQS",
+                stale.deleted_count,
+            )
         for i, faq in enumerate(SEEDED_FAQS):
             await db.faqs.update_one(
                 {"id": faq["id"]},

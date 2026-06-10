@@ -10,7 +10,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSession } from '@/src/ctx';
 import { api } from '@/src/utils/api';
 import { colors, spacing, radius, fonts, media, shadows, fmtUsd, fmtGhs } from '@/src/utils/theme';
-import CrossSellBanner from '@/src/components/CrossSellBanner';
 import DailyCheckinCard from '@/src/components/DailyCheckinCard';
 import WatchAdCard from '@/src/components/WatchAdCard';
 import TickingBtc from '@/src/components/TickingBtc';
@@ -56,7 +55,6 @@ export default function Home() {
   const { user, refresh } = useSession();
   const router = useRouter();
   const [earnings, setEarnings] = useState<EarningsPayload | null>(null);
-  const [crossSell, setCrossSell] = useState<any>(null);
   const [ticker, setTicker] = useState<string>('');
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -94,12 +92,11 @@ export default function Home() {
 
   const load = useCallback(async () => {
     /* Each call is best-effort + hard-timeout. /earnings is the only
-     * truly-required call (drives the hero card); cross-sell and ticker
-     * are decorative and can silently no-op. */
+     * truly-required call (drives the hero card); ticker is decorative
+     * and can silently no-op. */
     let earningsErr: Error | null = null;
-    const [e, c, t] = await Promise.allSettled([
+    const [e, t] = await Promise.allSettled([
       withTimeout(api('/earnings'), DASHBOARD_FETCH_TIMEOUT_MS, 'earnings'),
-      withTimeout(api('/store/cross-sell'), DASHBOARD_FETCH_TIMEOUT_MS, 'crossSell'),
       withTimeout(api('/ai/ticker'), DASHBOARD_FETCH_TIMEOUT_MS, 'ticker'),
     ]);
     if (!mountedRef.current) return;
@@ -115,7 +112,6 @@ export default function Home() {
       setEarnings((prev) => prev);
       if (!earnings) setLoadError(earningsErr.message);
     }
-    if (c.status === 'fulfilled') setCrossSell(c.value);
     if (t.status === 'fulfilled') setTicker(t.value?.text || '');
   }, [earnings]);
 
@@ -189,9 +185,6 @@ export default function Home() {
             <Ionicons name="chatbubble-ellipses" size={20} color={colors.primary} />
           </TouchableOpacity>
         </View>
-
-        {/* Dynamic cross-sell banner */}
-        <CrossSellBanner data={crossSell} />
 
         {/* ===== UNIFIED HERO CARD: Earnings + Hashrate ===== */}
         <LinearGradient

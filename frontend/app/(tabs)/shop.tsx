@@ -1,16 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
-  ActivityIndicator, Alert, Platform, type LayoutChangeEvent,
+  ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { api } from '@/src/utils/api';
 import { useSession } from '@/src/ctx';
 import { colors, radius, spacing, fonts, fmtUsd, fmtGhs } from '@/src/utils/theme';
-import CrossSellBanner from '@/src/components/CrossSellBanner';
 import { buyProduct, isIapAvailable, restorePurchases } from '@/src/utils/iap';
 
 type Pkg = {
@@ -31,52 +30,17 @@ type Pkg = {
 
 export default function Store() {
   const { user, refresh } = useSession();
-  const params = useLocalSearchParams<{ focus?: string }>();
   const [packages, setPackages] = useState<Pkg[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [crossSell, setCrossSell] = useState<any>(null);
   const [earnings, setEarnings] = useState<any>(null);
   const [consumed, setConsumed] = useState<string[]>([]);
 
-  // ────────────────────────────────────────────────────────────────
-  // Build 38 — Apple Guideline 2.1(a) remediation (iPad Air 11" / iPadOS 26.5)
-  //
-  // Apple reported the orange "+100%!! More Computing P..." promo
-  // banner as unresponsive. Root cause: the banner's default onPress
-  // calls router.push('/(tabs)/shop?focus=...'), but the user is
-  // already on the shop tab, so the router treats it as a no-op. The
-  // TouchableOpacity flashes (activeOpacity dim) but nothing happens —
-  // appears as a "dead tap" to the reviewer.
-  //
-  // Fix: pass an explicit onPress that (1) selects the promoted
-  // package via local state and (2) scrolls the ScrollView to the
-  // "Selected plan detail card" so the user sees the price + Pay
-  // button immediately. The behavior is identical whether the user
-  // is on iPhone or iPad — there is no router round-trip involved.
-  // ────────────────────────────────────────────────────────────────
-  const scrollRef = useRef<ScrollView>(null);
-  const detailCardYRef = useRef<number>(0);
-  const onDetailCardLayout = useCallback((e: LayoutChangeEvent) => {
-    detailCardYRef.current = e.nativeEvent.layout.y;
-  }, []);
-  const handleCrossSellPress = useCallback(() => {
-    const targetId = crossSell?.package?.id as string | undefined;
-    if (targetId) setSelectedId(targetId);
-    // Allow one frame for the detail card to render with the new
-    // selection (its height/contents change), then scroll into view.
-    setTimeout(() => {
-      const y = Math.max(0, detailCardYRef.current - 16);
-      scrollRef.current?.scrollTo({ y, animated: true });
-    }, 80);
-  }, [crossSell?.package?.id]);
-
   const load = useCallback(async () => {
     try {
-      const [pk, cs, e] = await Promise.allSettled([
+      const [pk, e] = await Promise.allSettled([
         api('/packages'),
-        api('/store/cross-sell'),
         api('/earnings'),
       ]);
       if (pk.status === 'fulfilled') {
@@ -85,7 +49,6 @@ export default function Store() {
         const adFreePkg = all.find((p) => p.id === 'adfree_399');
         if (adFreePkg) setPackages((prev) => [...prev, adFreePkg]);
       }
-      if (cs.status === 'fulfilled') setCrossSell(cs.value);
       if (e.status === 'fulfilled') setEarnings(e.value);
       setConsumed((user as any)?.purchased_sku_bonuses || []);
     } catch {}
@@ -95,14 +58,11 @@ export default function Store() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   useEffect(() => {
-    if (params.focus && packages.length > 0) {
-      const target = packages.find((p) => p.id === params.focus);
-      if (target) setSelectedId(target.id);
-    } else if (!selectedId && packages.length > 0) {
+    if (!selectedId && packages.length > 0) {
       const popular = packages.find((p) => p.badge === 'POPULAR') || packages[2] || packages[0];
       setSelectedId(popular.id);
     }
-  }, [packages, params.focus, selectedId]);
+  }, [packages, selectedId]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -254,7 +214,6 @@ export default function Store() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
-        ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
@@ -277,8 +236,6 @@ export default function Store() {
             </TouchableOpacity>
           ) : null}
         </View>
-
-        <CrossSellBanner data={crossSell} onPress={handleCrossSellPress} />
 
         {/* Active Computing Power */}
         <View style={styles.activeCard}>
@@ -320,11 +277,9 @@ export default function Store() {
         </ScrollView>
 
         {/* Selected plan detail card */}
-        <View onLayout={onDetailCardLayout} testID="plan-detail-anchor">
-          {selected && !selected.entitlement ? (
-            <PlanCard pkg={selected} alreadyBonusUsed={consumed.includes(selected.id)} onBuy={() => buy(selected)} busy={busy} />
-          ) : null}
-        </View>
+        {selected && !selected.entitlement ? (
+          <PlanCard pkg={selected} alreadyBonusUsed={consumed.includes(selected.id)} onBuy={() => buy(selected)} busy={busy} />
+        ) : null}
 
         {/* Ad-Free upgrade card */}
         {packages.find((p) => p.entitlement === 'ad_free') ? (

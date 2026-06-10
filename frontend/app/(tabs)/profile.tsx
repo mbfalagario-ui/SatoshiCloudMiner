@@ -233,37 +233,6 @@ export default function Profile() {
           </TouchableOpacity>
         ) : null}
 
-        {/* Help & FAQs — searchable knowledge base. Tap to expand. */}
-        <Text style={styles.sectionLabel}>HELP & FAQs</Text>
-        <View style={styles.faqWrap}>
-          {faqs.length === 0 ? (
-            <Text style={styles.faqEmpty}>Loading frequently asked questions…</Text>
-          ) : (
-            faqs.map((f, i) => {
-              const open = expandedFaq === f.id;
-              return (
-                <TouchableOpacity
-                  key={f.id}
-                  activeOpacity={0.85}
-                  style={[styles.faqRow, i === faqs.length - 1 && { borderBottomWidth: 0 }]}
-                  onPress={() => setExpandedFaq(open ? null : f.id)}
-                  testID={`profile-faq-${f.id}`}
-                >
-                  <View style={styles.faqHeader}>
-                    <Ionicons
-                      name={open ? 'chevron-down-circle' : 'help-circle'}
-                      size={18}
-                      color={open ? colors.primary : colors.textSecondary}
-                    />
-                    <Text style={styles.faqQ} numberOfLines={open ? undefined : 2}>{f.q}</Text>
-                  </View>
-                  {open ? <Text style={styles.faqA}>{f.a}</Text> : null}
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </View>
-
         <TouchableOpacity
           testID="profile-contact-support-btn"
           style={styles.contactSupportBtn}
@@ -429,6 +398,32 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 14,
     textAlign: 'center',
+    marginTop: 6,
+    paddingHorizontal: spacing.md,
+  },
+  contactSupportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    marginTop: spacing.sm,
+  },
+  contactSupportText: { flex: 1, color: colors.primary, fontWeight: '800', fontSize: 13 },
+  appVersion: { color: colors.textTertiary, fontSize: 11, textAlign: 'center', marginTop: spacing.lg },
+  disclaimer: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
+});
+ign: 'center',
     marginTop: 6,
     paddingHorizontal: spacing.md,
   },

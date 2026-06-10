@@ -10,7 +10,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/utils/api';
 import { useSession } from '@/src/ctx';
 import { colors, spacing, radius, fonts, media, shadows, fmtUsd, fmtBtc, fmtSats } from '@/src/utils/theme';
-import CrossSellBanner from '@/src/components/CrossSellBanner';
 import TickingBtc from '@/src/components/TickingBtc';
 
 type EarningsPayload = {
@@ -29,17 +28,17 @@ export default function Earnings() {
   const { user, refresh } = useSession();
   const router = useRouter();
   const [earnings, setEarnings] = useState<EarningsPayload | null>(null);
-  const [crossSell, setCrossSell] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  /* Build 38 — Apple Guideline 2.1(a) remediation:
+   * The redundant `/api/store/cross-sell` fetch + CrossSellBanner render was
+   * removed (the banner produced the dead tap-target on iPad). Earnings is
+   * the only call this screen needs, so the loader doesn't wait on any
+   * other endpoint. */
   const load = useCallback(async () => {
     try {
-      const [e, c] = await Promise.allSettled([
-        api('/earnings'),
-        api('/store/cross-sell'),
-      ]);
-      if (e.status === 'fulfilled') setEarnings(e.value);
-      if (c.status === 'fulfilled') setCrossSell(c.value);
+      const e = await api('/earnings');
+      setEarnings(e);
     } catch {}
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -69,9 +68,6 @@ export default function Earnings() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         <Text style={styles.title}>Earnings</Text>
-
-        {/* Cross-sell banner */}
-        <CrossSellBanner data={crossSell} />
 
         {/* Indicative balance */}
         <LinearGradient colors={['#16202C', '#0E1620']} style={styles.balanceCard}>
