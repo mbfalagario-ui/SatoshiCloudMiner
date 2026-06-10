@@ -1,12 +1,18 @@
 import { storage } from '@/src/utils/storage';
 
-// Fallback if EXPO_PUBLIC_BACKEND_URL isn't baked into the build.
-// IMPORTANT: This MUST be a production-grade URL. Previous use of the
-// `preview.emergentagent.com` URL caused Build #23 to 404 on iPad
-// (Apple rejection round 4). The Fly.io production backend is always-on
-// and serves both legal/support and the API.
-const FALLBACK_BACKEND = 'https://api.hashratecloudminer.com';
-const BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || FALLBACK_BACKEND).replace(/\/$/, '');
+// EXPO_PUBLIC_BACKEND_URL MUST be baked into every build (it is set in
+// frontend/.env for dev/preview and in every eas.json profile for native
+// builds). No hardcoded fallback: a wrong fallback URL caused Build #23 to
+// 404 on iPad (Apple rejection round 4), and a hardcoded production URL
+// breaks non-production deployments. Fail fast and loud instead.
+const BASE = (process.env.EXPO_PUBLIC_BACKEND_URL || '').replace(/\/$/, '');
+if (!BASE) {
+  // eslint-disable-next-line no-console
+  console.error(
+    '[api] EXPO_PUBLIC_BACKEND_URL is not set — all API calls will fail. ' +
+      'Set it in frontend/.env (dev) or the eas.json build profile (native).'
+  );
+}
 const TOKEN_KEY = 'hc_access_token';
 
 export async function saveToken(token: string) {

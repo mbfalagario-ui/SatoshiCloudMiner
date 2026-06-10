@@ -26,7 +26,6 @@ from integrations.blink import create_payout as blink_create_payout, get_payout 
 from integrations import ai as ai_mod
 from integrations import btc_rate as btc_rate_mod
 from services.scheduler import start_jobs, stop_jobs
-from services.auto_ship import auto_ship_tick
 
 
 def get_btc_usd_rate() -> float:
@@ -4525,7 +4524,6 @@ async def startup():
             auto_checkin=_job_auto_checkin,
             auto_reinvest=_job_auto_reinvest,
             refresh_agents=_job_refresh_agents,
-            auto_ship=auto_ship_tick,
             uptime_check=_job_uptime,
         )
     except Exception:
