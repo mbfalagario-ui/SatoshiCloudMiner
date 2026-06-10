@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
-  ActivityIndicator, Alert, Platform,
+  ActivityIndicator, Alert, Platform, type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,6 +39,38 @@ export default function Store() {
   const [crossSell, setCrossSell] = useState<any>(null);
   const [earnings, setEarnings] = useState<any>(null);
   const [consumed, setConsumed] = useState<string[]>([]);
+
+  // ────────────────────────────────────────────────────────────────
+  // Build 38 — Apple Guideline 2.1(a) remediation (iPad Air 11" / iPadOS 26.5)
+  //
+  // Apple reported the orange "+100%!! More Computing P..." promo
+  // banner as unresponsive. Root cause: the banner's default onPress
+  // calls router.push('/(tabs)/shop?focus=...'), but the user is
+  // already on the shop tab, so the router treats it as a no-op. The
+  // TouchableOpacity flashes (activeOpacity dim) but nothing happens —
+  // appears as a "dead tap" to the reviewer.
+  //
+  // Fix: pass an explicit onPress that (1) selects the promoted
+  // package via local state and (2) scrolls the ScrollView to the
+  // "Selected plan detail card" so the user sees the price + Pay
+  // button immediately. The behavior is identical whether the user
+  // is on iPhone or iPad — there is no router round-trip involved.
+  // ────────────────────────────────────────────────────────────────
+  const scrollRef = useRef<ScrollView>(null);
+  const detailCardYRef = useRef<number>(0);
+  const onDetailCardLayout = useCallback((e: LayoutChangeEvent) => {
+    detailCardYRef.current = e.nativeEvent.layout.y;
+  }, []);
+  const handleCrossSellPress = useCallback(() => {
+    const targetId = crossSell?.package?.id as string | undefined;
+    if (targetId) setSelectedId(targetId);
+    // Allow one frame for the detail card to render with the new
+    // selection (its height/contents change), then scroll into view.
+    setTimeout(() => {
+      const y = Math.max(0, detailCardYRef.current - 16);
+      scrollRef.current?.scrollTo({ y, animated: true });
+    }, 80);
+  }, [crossSell?.package?.id]);
 
   const load = useCallback(async () => {
     try {
@@ -222,6 +254,7 @@ export default function Store() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
@@ -245,7 +278,7 @@ export default function Store() {
           ) : null}
         </View>
 
-        <CrossSellBanner data={crossSell} />
+        <CrossSellBanner data={crossSell} onPress={handleCrossSellPress} />
 
         {/* Active Computing Power */}
         <View style={styles.activeCard}>
@@ -287,9 +320,11 @@ export default function Store() {
         </ScrollView>
 
         {/* Selected plan detail card */}
-        {selected && !selected.entitlement ? (
-          <PlanCard pkg={selected} alreadyBonusUsed={consumed.includes(selected.id)} onBuy={() => buy(selected)} busy={busy} />
-        ) : null}
+        <View onLayout={onDetailCardLayout} testID="plan-detail-anchor">
+          {selected && !selected.entitlement ? (
+            <PlanCard pkg={selected} alreadyBonusUsed={consumed.includes(selected.id)} onBuy={() => buy(selected)} busy={busy} />
+          ) : null}
+        </View>
 
         {/* Ad-Free upgrade card */}
         {packages.find((p) => p.entitlement === 'ad_free') ? (
