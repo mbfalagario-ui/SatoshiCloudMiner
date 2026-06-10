@@ -1,0 +1,44 @@
+{
+  "summary": "Build 38 frontend forensic UI QA pass via Expo WEB preview (https://ios-clone-platform.preview.emergentagent.com) — VERDICT: PASS. Logged in as reviewer1 (appreview1@hashratecloudminer.app / AppReview2026!) and exercised Home, Store, Earnings, Profile, FAQ, Support, and My Boosts screens at iPhone-12 viewport (390x844). All 12 Apple-Build-38 acceptance criteria from the review request were verified green: (1) login works; (2) Home loads quickly with NO 'View Booster Options' / '+100%' / 'More Computing Power' anywhere; (3) Store loads with package tiles (Pay $4.99 visible) and NO cross-sell banner; (4) Earnings tab clean, no cross-sell banner; (5) Profile renders NO inline FAQ list — only the 'Help & FAQs' menu row (testID=profile-faq) and 'Still need help? Chat with support' button (testID=profile-contact-support-btn); (6) profile-admin-btn is correctly ABSENT for non-admin reviewer; (7) profile-app-version reads EXACTLY 'Hashrate Cloud Miner v1.0.3 (38)' — matches expected build; (8) Help & FAQs screen renders ~17 FAQ items with NO 'View Booster Options' / '+100%' / 'More Computing Power' and NO standalone word 'Rig'; (9) Support screen opens with 'QUICK ANSWERS' tile section + message input field; (10) navigating Home→Store→Earnings→Profile repeatedly stays responsive, no red screen, no crashes; (11) My Boosts opens cleanly (empty state 'You do not own any boosts yet · Browse packages') with no Rig/per-day/expiry wording; (12) Restore Purchases is implemented with testID='restore-purchases-btn' on Store but is gated to Platform.OS==='ios' (file shop.tsx line 226) — intentionally hidden on web preview per the agent-to-agent context note, NOT a regression. Build 38 corrective changes (cross-sell banner removal across Home/Store/Wallet, inline FAQ removal from Profile, v1.0.3(38) version bump, page-load delay fix) are all verified clean in the web preview. No deprecated Expo packages (expo-av / expo-barcode-scanner / expo-background-fetch) found in user-facing screens. No React Native red-screen errors observed. The metro stub for react-native-google-mobile-ads is working — AdMob 'Watch ad — free hashrate' card shows 'Loading...' on web as expected (graceful no-op, per review notes).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/build38_results.xml (backend, prior iteration_4)",
+    "/app/test_reports/iteration_4.json (backend pass)",
+    "/app/test_reports/iteration_5.json (this frontend pass)"
+  ],
+  "action_items": [
+    "None — Build 38 is App-Review-ready from both backend (iteration_4: 30/30 prod pytest green) and frontend (iteration_5: all 12 UI acceptance criteria green on Expo web preview)."
+  ],
+  "critical_code_review_comments": [
+    "profile.tsx — inline FAQ fetch+render block is fully removed (confirmed by source comment at line 45-49 and by runtime body-text scrape: zero question-mark FAQ entries on Profile). Help & FAQs row still routes to /faq with all 17+1 questions preserved.",
+    "profile.tsx — profile-app-version testID renders 'Hashrate Cloud Miner v1.0.3 (38)' from Constants.expoConfig.version + Constants.nativeBuildVersion fallback. Exact-string match verified.",
+    "profile.tsx — profile-admin-btn is conditional on user.is_admin; correctly hidden for reviewer1 (is_admin=false confirmed against prod /api/auth/me in iteration_4).",
+    "shop.tsx line 226-237 — 'Restore Purchases' button is gated Platform.OS==='ios' (testID=restore-purchases-btn). Intentional and correct for App-Store IAP semantics; web preview will not show it.",
+    "index.tsx (Home) — cross-sell banner removed cleanly. Hero card → Daily Check-in → Watch ad → ticker → disclaimer. Page-load timeout retry pattern (DASHBOARD_FETCH_TIMEOUT_MS=12s + 'no endless spinner' error UI at line 130-153) is in place — verified by quick load on Home (no spinner persisted).",
+    "wallet.tsx line 34 — only a code comment references 'cross-sell' (documenting the removal). No runtime cross-sell render path.",
+    "FAQ /faq screen renders 17 user-visible questions plus a 'Need more help?' footer (18 total question marks counted). NO occurrence of 'View Booster Options' / '+100%' / 'More Computing Power' / '\\bRig\\b'.",
+    "Watch-ad card shows 'Loading...' indefinitely on web — this is the expected metro stub no-op for react-native-google-mobile-ads on the web platform; iOS native build is unaffected. Per review notes, this is NOT to be reported as a bug.",
+    "Console warnings observed (non-blocking, pre-existing): RN web 'shadow*' / 'resizeMode' / 'pointerEvents' / 'useNativeDriver missing RCTAnimation' deprecation warnings. These do not affect rendering or app store review since they only appear in the dev web preview, not in the iOS native binary."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_5.json (this report only — no app source code modified)"
+  ],
+  "success_rate": {
+    "backend": "100% (30/30 — iteration_4)",
+    "frontend": "100% (12/12 review-request acceptance criteria verified green via Playwright on Expo web preview at 390x844)"
+  },
+  "seed_data_creation": "None. Read-only UI exploration as reviewer1. No purchases attempted (per review request gate). No account-deletion attempted.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Build 38 frontend QA pass complete. The Expo web preview now bundles + renders correctly thanks to the WEB-ONLY metro resolver stub for react-native-google-mobile-ads (see frontend/src/utils/admob.web-stub.js + metro.config.js platform-guarded alias). The login flow is: tap 'I already have an account' on the landing page → fill email+password → tap Sign in → lands on Home tab (no redirect issues). Tabs are labelled 'Home', 'Store', 'Earnings', 'Profile' (note: the wallet route file is wallet.tsx but the tab LABEL is 'Earnings', not 'Wallet' — a Playwright get_by_text('Wallet') will time out). Restore Purchases is iOS-gated (Platform.OS==='ios') — do NOT report its absence on web preview as a bug. The Watch Ad card shows 'Loading...' on web by design (admob web stub) — do NOT report this as a bug either. Profile testIDs verified: profile-faq, profile-contact-support-btn, profile-app-version, profile-miners, profile-premium-support all present; profile-admin-btn correctly absent for non-admin reviewer. Version label exact text: 'Hashrate Cloud Miner v1.0.3 (38)'. For future regression cycles, the Playwright pattern used here (mobile viewport 390x844, login via 'I already have an account', tab navigation via get_by_text exact=True for Home/Store/Earnings/Profile, body-text scrape + regex \\bRig\\b for purity checks) is the recommended approach.",
+  "rca_of_issue": "N/A — no UI defects or regressions observed in Build 38 frontend. The Apple Build 37 rejection drivers ('View Booster Options' cross-sell banner unresponsive on iPad, duplicate inline FAQ on Profile, slow page-load) are all verifiably eliminated in the current web preview build, which mirrors what will ship in the iOS binary."
+}

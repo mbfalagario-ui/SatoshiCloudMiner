@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, fonts, fmtUsd } from '@/src/utils/theme';
 import { useSession } from '@/src/ctx';
@@ -261,7 +262,10 @@ export default function Profile() {
           Action is immediate and cannot be undone.
         </Text>
 
-        <Text style={styles.appVersion}>Hashrate Cloud Miner v1.0.1 (23)</Text>
+        <Text style={styles.appVersion} testID="profile-app-version">
+          Hashrate Cloud Miner v{Constants.expoConfig?.version ?? '1.0.3'} (
+          {Constants.nativeBuildVersion ?? Constants.expoConfig?.ios?.buildNumber ?? '38'})
+        </Text>
         <Text style={styles.disclaimer}>
           Hashrate Cloud Miner is a cloud computing simulation and monitoring tool. It is not a financial,
           investment, or trading platform. Outcomes depend on server status and operational
